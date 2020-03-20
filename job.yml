@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Prefix name of job with user and timestamp
+  name: $USER-minimap2-alignment-$TS
+spec:
+  backoffLimit: 0
+  # # Delete the log after a minute
+  # ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      containers:
+      - name: cactus-minimap-aligner
+        image: $DOCKERHUB_ACCOUNT/cactus-minimap-aligner
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /scratch
+          name: scratch-volume
+        - mountPath: /root/.aws
+          name: s3-credentials
+          readOnly: true
+        resources:
+          requests:
+            cpu: "1"
+            memory: "60G"
+            ephemeral-storage: "5G"
+          limits:
+            cpu: "1"
+            memory: "60G"
+            ephemeral-storage: "5G"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          wget --quiet http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+          gunzip hg38.fa.gz
+          mkdir assembly_contigs
+          cd /app/assembly_contigs
+          wget --quiet https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/CHM13_shasta_marginpolish_helen_consensus.fa
+          wget --quiet https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/GM24143_shasta_marginpolish_helen_consensus.fa
+          wget --quiet https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/GM24149_shasta_marginpolish_helen_consensus.fa
+          wget --quiet https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/GM24385_shasta_marginpolish_helen_consensus.fa
+          wget --quiet https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG00733_shasta_marginpolish_helen_consensus.fa
+          cd ..
+          time python3 minimap2_cactus_aligner_toil.py --assemblies_dir assembly_contigs --ref_file hg38.fa --output_file alignments_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam file:my-job-store &>alignment_cerr.txt
+          aws s3 cp alignment_cerr.txt s3://vg-k8s/users/rrounthw/london_calling_2019_first_5_files_alignment_cerr.txt
+          aws s3 cp alignments_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam s3://vg-k8s/users/rrounthw/london_calling_2019_first_5_files_alignments_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam
+        
+        
+        # echo hi >hi.txt
+        # aws s3 cp hi.txt s3://vg-k8s/users/rrounthw/hi.txt        
+        # time python3 minimap2_cactus_aligner_toil.py file:my-job-store
+        # time python3 minimap2_cactus_aligner_toil.py file:my-job-store
+        # echo hi >hi.txt
+        # aws s3 cp hi.txt s3://vg-k8s/users/rrounthw/hi.txt        
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG01109_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG01243_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG02055_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG02080_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG02723_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG03098_shasta_marginpolish_helen_consensus.fa
+          # wget https://storage.googleapis.com/kishwar-helen/polished_genomes/london_calling_2019/HG03492_shasta_marginpolish_helen_consensus.fa
+
+      restartPolicy: Never
+      volumes:
+      - name: scratch-volume
+        emptyDir: {}
+      - name: s3-credentials
+        secret:
+          secretName: shared-s3-credentials

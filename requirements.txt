@@ -1,0 +1,6 @@
+requests
+awscli
+toil
+pandas
+biopython
+cigar
