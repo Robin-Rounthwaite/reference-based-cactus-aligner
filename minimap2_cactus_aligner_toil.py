@@ -26,6 +26,8 @@ import operator
 
 import shutil
 
+from sam_to_lastz_cigar import make_lastz_output
+
 def empty(job):
     """
     An empty job, for easier toil job organization.
@@ -328,7 +330,8 @@ def get_poor_mapping_coverage_coordinates(job, assembly_file, mapping_coverage_c
                     poor_mapping_coords[contig_id].append((0, poor_mapping_stop))
                     # print("#################################################included coords for remap:", 0, poor_mapping_stop, poor_mapping_stop - 0, (poor_mapping_stop - 0)<100)
                 else:
-                    print("1________________Blocked:", 0, poor_mapping_stop)
+                    pass
+                    # print("1________________Blocked:", 0, poor_mapping_stop)
             for i in range(len(mapping_coverage_coords[contig_id]) - 1):
                 # for every pair of mapping coords i and i + 1,
                 # make a pair of (stop_from_ith_region, start_from_i+1th_region) to
@@ -343,9 +346,9 @@ def get_poor_mapping_coverage_coordinates(job, assembly_file, mapping_coverage_c
 
                 if poor_mapping_stop - poor_mapping_start >= options.minimum_size_remap: # implement size threshold.
                     poor_mapping_coords[contig_id].append((poor_mapping_start, poor_mapping_stop))
-                    # print("#################################################included coords for remap:", poor_mapping_start, poor_mapping_stop, poor_mapping_stop - poor_mapping_start, (poor_mapping_stop - poor_mapping_start)<100)
                 else:
-                    print("2________________Blocked:", poor_mapping_start, poor_mapping_stop)
+                    pass
+                    # print("2________________Blocked:", poor_mapping_start, poor_mapping_stop)
             if mapping_coverage_coords[contig_id][-1][1] < contig_lengths[contig_id]:
                 # if the last mapping region for the contig stops before the end of
                 # the contig, the last region is between the end of the mapping and the 
@@ -355,21 +358,14 @@ def get_poor_mapping_coverage_coordinates(job, assembly_file, mapping_coverage_c
                     poor_mapping_start = 0
                 if contig_lengths[contig_id] - poor_mapping_start >= options.minimum_size_remap: # implement size threshold.
                     poor_mapping_coords[contig_id].append((poor_mapping_start, contig_lengths[contig_id]))
-                    # print("#################################################included coords for remap:", poor_mapping_start, contig_lengths[contig_id], contig_lengths[contig_id] - poor_mapping_start, (contig_lengths[contig_id] - poor_mapping_start)<100)
                 else:
-                    print("3________________Blocked:", poor_mapping_start, contig_lengths[contig_id])
+                    pass
+                    # print("3________________Blocked:", poor_mapping_start, contig_lengths[contig_id])
 
         else:
             # there isn't a good_mapping region for this contig. The full length of 
             # the contig belongs in poor_mapping_coords.
             poor_mapping_coords[contig_id].append((0, contig_lengths[contig_id]))
-    # job.log("------------------------------------------ len of poor mapping coords: " + str(len(poor_mapping_coords["624"])))
-    # contig_624_sum = int()
-    # for coord in poor_mapping_coords["624"]:
-    #     if coord[1] - coord[0] <= 0:
-    #         job.log("++++++++++++++++++++++++++++++++++++++++++ WARNING: coord in 624 marks negative region of sequence.")
-    #     contig_624_sum += (coord[1] - coord[0])
-    # job.log("------------------------------------------ sum of poor mapping coord region lengths: " + str(contig_624_sum))
     return poor_mapping_coords
 
 def directly_calculate_contig_lengths(assembly_file):
@@ -418,28 +414,15 @@ def remap_poor_mapping_sequences(job, poor_mapping_sequence_file, assembly_to_al
     all_assemblies_but_to_align.remove(assembly_to_align_file)
 
     remapping_files = list()
-    # job.log("poor_mapping_sequence_file: " + poor_mapping_sequence_file)
-    # job.log("poor_mapping_sequence_file when read: " + job.fileStore.readGlobalFile(poor_mapping_sequence_file))
     for target_mapping_file in all_assemblies_but_to_align:
         output_file = job.fileStore.getLocalTempFile()
         output_file_global = job.fileStore.writeGlobalFile(output_file)
         # for every target mapping file (but check to make sure the target isn't 
         # the same original fasta as the poor_mapping_sequence_file),
         
-        # job.fileStore.readGlobalFile(output_file)
-        # job.fileStore.readGlobalFile(target_mapping_file)
-        # job.fileStore.readGlobalFile(poor_mapping_sequence_file)
-        # job.log("target mapping file: " + target_mapping_file)
-        # job.log("target mapping file when read: " + job.fileStore.readGlobalFile(target_mapping_file))
-        # job.log("poor mapping file when read: " + job.fileStore.readGlobalFile(poor_mapping_sequence_file))
-        # if job.fileStore.readGlobalFile(poor_mapping_sequence_file) != job.fileStore.readGlobalFile(target_mapping_file):
-        # job.log("mapping target mapping file: " + target_mapping_file)
-
         # map low_mapq_file to target_fasta_file.
-        print("*************************************about to call minimap for remappings")
         subprocess.call(["minimap2", "-ax", "asm5", "-o",
                             job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
-        print("*************************************about to call minimap for remappings")
         minimap_calls += 1
         remapping_files.append(output_file_global)
 
@@ -466,25 +449,25 @@ def consolidate_mapping_files(job, mapping_files):
     return job.fileStore.writeGlobalFile(consolidated_mappings)
 
 def main(options=None):
-    if not options:
-        # deal with command line arguments
-        parser = ArgumentParser()
-        Job.Runner.addToilOptions(parser)
-        parser.add_argument(
-            '--ref_file', default="hg38_chr21.fa", help='replace_me', type=str)
-            # '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
-        parser.add_argument(
-            '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
-        parser.add_argument(
-            '--output_file', default="small_chr21/output_alignment_2", help='replace_me', type=str)
-        parser.add_argument('--mapq_cutoff', default=20,
-                            help='replace_me', type=int)
-        parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
-        parser.add_argument('--sequence_context',
-                            default=10000, help='replace_me', type=int)
+    # if not options:
+    #     # deal with command line arguments
+    #     parser = ArgumentParser()
+    #     Job.Runner.addToilOptions(parser)
+    #     parser.add_argument(
+    #         '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/hg38_chr21.fa", help='replace_me', type=str)
+    #         # '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/hg38_chr21.fa", help='replace_me', type=str)
+    #     parser.add_argument(
+    #         '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/small_chr21/assemblies", help='replace_me', type=str)
+    #     parser.add_argument(
+    #         '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/small_chr21/output_alignment_2", help='replace_me', type=str)
+    #     parser.add_argument('--mapq_cutoff', default=20,
+    #                         help='replace_me', type=int)
+    #     parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
+    #     parser.add_argument('--sequence_context',
+    #                         default=10000, help='replace_me', type=int)
 
-        options = parser.parse_args()
-        options.clean = "always"
+    #     options = parser.parse_args()
+    #     options.clean = "always"
 
     # Now we are ready to run
     with Toil(options) as workflow:
@@ -525,33 +508,40 @@ def main(options=None):
                 assembly_file_names = edited_assembly_files
 
             # perform the alignments:
-            output = workflow.start(Job.wrapJobFn(
+            alignments = workflow.start(Job.wrapJobFn(
                 align_all_assemblies,  ref_id, assembly_files, options=options))
+
+            # reformat the alignments as lastz cigars:
+            (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+                make_lastz_output, alignments))
 
         else:
             output = workflow.restart()
 
-        workflow.exportFile(output, 'file://' + os.path.abspath(options.output_file))
+        workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
+        workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
     
 if __name__ == "__main__":
     parser = ArgumentParser()
     Job.Runner.addToilOptions(parser)
     # small chr21 example:
     parser.add_argument(
-        '--ref_file', default="hg38_chr21.fa", help='replace_me', type=str)
-        # '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
+        '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/hg38_chr21.fa", help='replace_me', type=str)
+        # '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/hg38_chr21.fa", help='replace_me', type=str)
     # parser.add_argument(
-    #     '--assemblies_dir', default="chr21/assemblies", help='replace_me', type=str)
+    #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/assemblies", help='replace_me', type=str)
     # parser.add_argument(
-    #     '--output_file', default="chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+    #     '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
     parser.add_argument(
-        '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
+        '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/small_chr21/assemblies", help='replace_me', type=str)
     parser.add_argument(
-        '--output_file', default="small_chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+        '--primary_output_file', default="lastz_primary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+    parser.add_argument(
+        '--secondary_output_file', default="lastz_secondary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
     # parser.add_argument(
-    #     '--assemblies_dir', default="map_624_small_chr21/assemblies", help='replace_me', type=str)
+    #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/assemblies", help='replace_me', type=str)
     # parser.add_argument(
-    #     '--output_file', default="map_624_small_chr21/toilified_output_10k_context_20_mapq_cutoff.sam", help='replace_me', type=str)
+    #     '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/toilified_output_10k_context_20_mapq_cutoff.sam", help='replace_me', type=str)
     parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
     parser.add_argument('--clean_contig_ids', default=True, help='replace_me', type=bool)
     parser.add_argument('--mapq_cutoff', default=20,
