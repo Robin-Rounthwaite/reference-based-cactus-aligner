@@ -92,28 +92,38 @@ def make_lastz_output(job, sam_file):
                 # then this line is marked as unmapped. Skip it.
                 continue
             cig_str = parsed[5]
-            #todo: if lastz needs rev_comped cigar, rev_comp the cig_str here (if flag=16 or 32). I'm leaning towards "no, rev_comp is not needed."
             query_id = parsed[0]
             query_start = get_query_start(cig_str)
             query_stop = get_query_stop(cig_str)
             target_id = parsed[2]
             target_start = parsed[3]
             target_stop = str(int(target_start) + get_target_alignment_length(cig_str))
-            # check to see if strand is + or -. if flag 16 or 32 is flipped, then we have strand -. 
-            if (flag%64)//32 == 1 or (flag%32)//16 == 1:
-                strand = "-"
-            else:
-                strand = "+"
-            # todo: change score to raw score? Or does lastz use mapq after all?
-            score = parsed[4]
-            lastz_cig = get_lastz_cig_str(cig_str)
 
-            #todo: if it's a secondary alignment (flag=256), then put it in a separate file.
+            #TODO: make sure you want both flags: 64 and 32. Main question: do I support flag 64, which is for paired end reads?
+            # check to see if query strand is + or -. if flag 16 or 32 is flipped, then we have query strand -.
+            if (flag%64)//32 == 1 or (flag%32)//16 == 1:
+                query_strand = "-"
+            else:
+                query_strand = "+"
+
+            #TODO: use raw score instead of minimap's mapq?
+            #NOTE: currently using mapq for output, even though original lastz supposedly uses raw alignment score.
+            score = parsed[4]
+
+            #get the "cigar alignment" part of the lastz_cigar. e.g. the "M 23 D 4 M 16" part.
+            lastz_cig_alignment = get_lastz_cig_str(cig_str)
+
+            # NOTE: as far as I can tell, the strand for the reference/target is always +.
+            # This is supported by the rough description of the lastz algorithm in the wiki. 
+            target_strand = "+"
+
+            full_lastz_cigar = " ".join(["cigar:", query_id, query_start, query_stop, query_strand, target_id, target_start, target_stop, target_strand, score, lastz_cig_alignment, "\n"])
+
+            #if it's a secondary alignment (flag=256), then put it in a separate file.
             if (flag%512)//256 == 1:
-                secondary_output_lines.append(" ".join(["cigar:", query_id, query_start, query_stop, target_id, target_start, target_stop, strand, score, lastz_cig, "\n"]))
-            
-            #todo: if it's a "supplementary alignment," then. . . What does that mean?
-            output_lines.append(" ".join(["cigar:", query_id, query_start, query_stop, target_id, target_start, target_stop, strand, score, lastz_cig, "\n"]))
+                secondary_output_lines.append(full_lastz_cigar)
+            else:
+                output_lines.append(full_lastz_cigar)
 
     output_file = job.fileStore.getLocalTempFile()
     secondary_output_file = job.fileStore.getLocalTempFile()

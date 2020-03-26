@@ -136,7 +136,6 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
     # organized in a dictionary with
     # dict{contig_id: list[tuple(start_of_poor_coverage, stop_of_poor_coverage)]} format.
     # this includes options.sequence_context, and options.minimum_size_remap.
-    #todo: make algorithm account for options.minimum_size_remap!
     poor_mapping_coverage_coords_job = mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_coverage_coordinates, assembly_to_align_file, mapping_coverage_coords, options)
     poor_mapping_coverage_coords = poor_mapping_coverage_coords_job.rv()
 
@@ -186,7 +185,6 @@ def get_mapping_coverage_points(job, map_to_ref_file, options):
             # parse line in map_file:
             mapping = mapping.split("\t")
             
-            #todo: do I want to implement the unique ID feature? I think that it would have to be implemented in the original input contigs, since the cactus constructor will want to work with the original contigs.
             # note: to keep contig_ids unique between fasta files, pair with the
             # original fasta filename of the assembly to the contig name.
             # contig_id = (fasta_file_name, mapping[0])
