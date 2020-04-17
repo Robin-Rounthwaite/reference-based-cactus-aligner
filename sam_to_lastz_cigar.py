@@ -117,6 +117,10 @@ def make_lastz_output(job, sam_file):
             # This is supported by the rough description of the lastz algorithm in the wiki. 
             target_strand = "+"
 
+            # #NOTE: currently hardcoding in id=0| prepends to id names, in the hopes that it will be compatible with cactus-align:
+            # query_id= "id=0|" + query_id
+            # target_id= "id=0|" + target_id
+
             full_lastz_cigar = " ".join(["cigar:", query_id, query_start, query_stop, query_strand, target_id, target_start, target_stop, target_strand, score, lastz_cig_alignment, "\n"])
 
             #if it's a secondary alignment (flag=256), then put it in a separate file.

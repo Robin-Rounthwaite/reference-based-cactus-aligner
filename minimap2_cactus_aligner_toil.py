@@ -18,7 +18,6 @@ from toil.realtimeLogger import RealtimeLogger
 
 import os
 import subprocess
-import pandas as pd
 from Bio import SeqIO
 import cigar
 import collections as col
@@ -63,21 +62,31 @@ def rename_duplicate_contig_ids(job, assembly_files):
         output_contigs = list()
         
         for contig in assembly_contigs:
-            
+            # print("---------------------------------------------------------------looking at contig.id:", contig.id)
+            debug = contig.id
             if contig.id in contig_ids:
+                # print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++found a duplicate contig.id:", contig.id)
                 old_id = contig.id
                 while contig.id in contig_ids:
+                    # print("in while loop, with old_id", contig.id)
+                    # if old_id == "5238":
+                    #     print("---------------------------------------------------------------current version of contig.id 5238:", contig.id)
+                    #     print("---------------------------------------------------------------current version of contig.description 5238:", contig.description)
                     # then there is a duplicate contig_id. edit this one.
                     # keep changing the contig_id until we get a completely unique id.
                     contig.id = old_id + "_renamed_" + str(unique_id)
                     contig.description = old_id + "_renamed_" + str(unique_id)
                     unique_id += 1
+                    # if old_id == "5238":
+                    #     print("---------------------------------------------------------------current version of contig.id 5238, after altering:", contig.id)
+                    #     print("---------------------------------------------------------------current version of contig.description 5238, after altering:", contig.description)
                 #record the new contig id as an observed id.
                 contig_ids.add(contig.id)
                 
             else:
                 # this isn't a duplicate contig_id. record it.
                 contig_ids.add(contig.id)
+            # if debug == "5238" or debug == "6348":
             output_contigs.append(contig)
 
         # write the altered assembly.
@@ -149,9 +158,102 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
     mapping_files.append(map_to_assemblies_file_job.rv())
     # map_to_assemblies_file_job.addChildJobFn(debug_get_contig_mappings, mapping_files[-1], 20)
 
-    # consolidate all the mapping_files to become a single file, and return.
+    # consolidate all the mapping_files to become a single file.
+    consolidate_mapping_files_job = map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files)
+    consolidated_mapping_files = consolidate_mapping_files_job.rv()
+
+    return consolidate_mapping_files_job.addFollowOnJobFn(relocate_remapped_fragments_to_source_contigs, consolidated_mapping_files, assembly_to_align_file).rv()
+
     # return poor_mapping_sequence_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
-    return map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
+    # return map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
+
+def relocate_remapped_fragments_to_source_contigs(job, mapping_file, fasta_file):
+    """
+    renames contig fragments from the remapping step to the original
+    contig name. Changes the cigar clipping based on the fragment rename, too. 
+    Arguments:
+        mapping_file {[type]} -- [description]
+        fasta_file {[type]} -- [description]
+    """
+    
+    modified_mapping_file = job.fileStore.getLocalTempFile()
+    contig_lengths  = directly_calculate_contig_lengths(job.fileStore.readGlobalFile(fasta_file))
+
+    with open(job.fileStore.readGlobalFile(mapping_file)) as inf:
+        with open(modified_mapping_file, "w") as outf:
+            print("hi")
+            for line in inf:
+                parsed = line.split()
+                if (int(parsed[1])%8)//4==1:
+                    # if the line is flagged as unmapped, just write it to the outfile.
+                    outf.write(line)
+                elif "segment" in parsed[0]:
+                    name_parsed = parsed[0].split("_")
+                    new_name = name_parsed[0]
+                    seg_start = name_parsed[-3]
+                    seg_stop = name_parsed[-1]
+                    cig_str = parsed[5]
+                    print(cig_str)
+                    cig = cigar.Cigar(cig_str)
+                    cig_list = list(cig.items())
+                    print("line before modification: ", line)
+                    #cig_temp_start is used to determine where the alignment starts *with relation
+                    # to the start of the contig fragment*. This is useful for calculating
+                    # cig_stop, below.
+
+                    alignment_start_pos_in_seg = int()
+                    if cig_list[0][1] in ["H", "S"]:
+                        alignment_start_pos_in_seg = int(cig_list[0][0])
+                    else:
+                        alignment_start_pos_in_seg = 0
+
+                    alignment_length = len(cig)
+                    if cig_list[0][1] == "S":
+                        alignment_length = alignment_length - cig_list[0][0]
+                    if cig_list[-1][1] == "S":
+                        alignment_length = alignment_length - cig_list[-1][0]
+
+                    alignment_end_pos_in_seg = alignment_start_pos_in_seg + alignment_length
+
+                    ## modify cig_start (the clipping at the beginning of the cigar)
+                    if cig_list[0][1] in ["H", "S"]:
+                        # then the mapping has a clipping at start. Modify cig_str clipping.
+                        print("cig_list before", cig_list[0])
+                        cig_list[0] = (int(cig_list[0][0]) + int(seg_start), cig_list[0][1])
+                        print("cig_list after", cig_list[0])
+                    elif seg_start:
+                        # then there is a nonzero seg_start, but there isn't a clipping for cig_str. Add clipping.
+                        cig_list.insert(0, (seg_start, "H"))
+
+                    ## modify clipping at the end of cig
+                    print("alignment_end_pos_in_seg", alignment_end_pos_in_seg, "seg_start", seg_start, "contig_lengths[new_name]", contig_lengths[new_name])
+                    if alignment_end_pos_in_seg + int(seg_start) < contig_lengths[new_name]:
+                        # then there is additional clipping that needs to be added to the end of the cig.
+                        end_clipping_len = contig_lengths[new_name] - (alignment_end_pos_in_seg + int(seg_start))
+                        if cig_list[-1][1] in ["H", "S"]:
+                            # then the mapping has a clipping at the end. Modify the clipping.
+                            #TODO: make it so you properly remove end clipping, not first two chars!
+                            cig_list[-1] = (end_clipping_len, cig_list[-1][1])
+                        else:
+                            #the mapping doesn't have a clipping. Add one.
+                            cig_list.append((end_clipping_len, "H"))
+                    
+                    # compose the new cig
+                    new_cig = ""
+                    for tup in cig_list:
+                        new_cig += str(tup[0]) + tup[1]
+
+                    #now, alter the line
+                    new_line = new_name + "\t" + "\t".join(parsed[1:5]) + "\t" + new_cig + "\t" + "\t".join(parsed[6:])
+                    print("line after modification: ", new_line)
+
+                    #add it to the outfile
+                    outf.write(new_line)
+                else:
+                    outf.write(line)
+
+    return job.fileStore.writeGlobalFile(modified_mapping_file)
+
 
 
 
@@ -310,6 +412,7 @@ def get_poor_mapping_coverage_coordinates(job, assembly_file, mapping_coverage_c
             want to expand each of the poor_mapping_coords by, to include context
             sequence for the poor mapping sequence. 
     """
+    #TODO: moving contig_lenghts calculation to outer fxn so I can distribute across two fxns
     # get the length of the contigs in assembly_file:
     contig_lengths = directly_calculate_contig_lengths(job.fileStore.readGlobalFile(assembly_file))
     
@@ -512,30 +615,37 @@ def main(options=None):
             # reformat the alignments as lastz cigars:
             (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
                 make_lastz_output, alignments))
+                
+            workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
+            workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
 
         else:
             output = workflow.restart()
 
-        workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
-        workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
+        # workflow.exportFile(alignments, 'file://' + os.path.abspath(options.debug_output_file))
+
     
 if __name__ == "__main__":
     parser = ArgumentParser()
     Job.Runner.addToilOptions(parser)
     # small chr21 example:
     parser.add_argument(
-        '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/hg38_chr21.fa", help='replace_me', type=str)
-        # '--ref_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/hg38_chr21.fa", help='replace_me', type=str)
+        '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
+        # '--ref_file', default="/chr21/hg38_chr21.fa", help='replace_me', type=str)
     # parser.add_argument(
     #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/assemblies", help='replace_me', type=str)
     # parser.add_argument(
-    #     '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+    #     '--debug_output_file', default="small_chr21/minimap2_output.sam", help='replace_me', type=str)
     parser.add_argument(
-        '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/small_chr21/assemblies", help='replace_me', type=str)
+        '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
     parser.add_argument(
-        '--primary_output_file', default="lastz_primary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+        '--primary_output_file', default="small_chr21_test_primary.sam", help='replace_me', type=str)
     parser.add_argument(
-        '--secondary_output_file', default="lastz_secondary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+        '--secondary_output_file', default="small_chr21_test_secondary.sam", help='replace_me', type=str)
+    # parser.add_argument(
+    #     '--primary_output_file', default="lastz_primary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
+    # parser.add_argument(
+    #     '--secondary_output_file', default="lastz_secondary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
     # parser.add_argument(
     #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/assemblies", help='replace_me', type=str)
     # parser.add_argument(
