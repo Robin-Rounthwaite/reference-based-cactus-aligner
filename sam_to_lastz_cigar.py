@@ -2,8 +2,12 @@
 # This should help with joining the output of my minimap2 cactus alignment algorithm
 # into Cactus itself. 
 
+from argparse import ArgumentParser
+
 from cigar import Cigar
+from toil.common import Toil
 from toil.job import Job
+import os
 
 def get_query_start(cigar_string):
     """
@@ -56,6 +60,7 @@ def get_query_stop(cigar_string):
         stop_position -= cig_list[-1][0]
     return str(stop_position)
 
+
 def get_target_alignment_length(cigar_string):
     """
     Determines how much of the target was aligned to the query, based on the query's 
@@ -76,10 +81,10 @@ def get_lastz_cig_str(cigar_string):
     cig = Cigar(cigar_string)
     lastz_cig = ''
     for item in cig.items():
-        lastz_cig += item[1] + " " + str(item[0]) + " "
+        if item[1] not in ["H", "S"]:
+            lastz_cig += item[1] + " " + str(item[0]) + " "
     return lastz_cig[:-1]
 
-# def make_lastz_output(job, sam_file, output_file, secondary_output_file):
 def make_lastz_output(job, sam_file):
     output_lines = list()
     secondary_output_lines = list()
@@ -96,8 +101,14 @@ def make_lastz_output(job, sam_file):
             query_start = get_query_start(cig_str)
             query_stop = get_query_stop(cig_str)
             target_id = parsed[2]
-            target_start = parsed[3]
+            #note: target_start is 1-based in SAM and 0-based in LASTZ. Hence the -1 here.
+            target_start = str(int(parsed[3]) - 1)
             target_stop = str(int(target_start) + get_target_alignment_length(cig_str))
+            # target_start = str(int(parsed[3]) - 1)
+            # if int(target_start) < 0:
+            #     print("------------------------------------------------------------------------target_start less than 0!")
+            # #todo: I'm currently test the -1 in the line below. Is that correct?
+            # target_stop = str(int(target_start) + get_target_alignment_length(cig_str) - 1)
 
             #TODO: make sure you want both flags: 64 and 32. Main question: do I support flag 64, which is for paired end reads?
             # check to see if query strand is + or -. if flag 16 or 32 is flipped, then we have query strand -.
@@ -121,7 +132,10 @@ def make_lastz_output(job, sam_file):
             # query_id= "id=0|" + query_id
             # target_id= "id=0|" + target_id
 
-            full_lastz_cigar = " ".join(["cigar:", query_id, query_start, query_stop, query_strand, target_id, target_start, target_stop, target_strand, score, lastz_cig_alignment, "\n"])
+            if query_strand == "+":
+                full_lastz_cigar = " ".join(["cigar:", query_id, query_start, query_stop, query_strand, target_id, target_start, target_stop, target_strand, score, lastz_cig_alignment, "\n"])
+            else: # query_strand == "-", swap the query coordinates, because we're walking along the strand backwards.
+                full_lastz_cigar = " ".join(["cigar:", query_id, query_stop, query_start, query_strand, target_id, target_start, target_stop, target_strand, score, lastz_cig_alignment, "\n"])
 
             #if it's a secondary alignment (flag=256), then put it in a separate file.
             if (flag%512)//256 == 1:
@@ -140,11 +154,32 @@ def make_lastz_output(job, sam_file):
     return (job.fileStore.writeGlobalFile(output_file), job.fileStore.writeGlobalFile(secondary_output_file))
     
 
-# def main():
-#     sam_file = "/home/robin/paten_lab/kube_toil_minimap2_cactus/small_chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam"
-#     output_file = "/home/robin/paten_lab/convert_cigar_minimap_to_lastz/test.out"
-#     secondary_output_file = "/home/robin/paten_lab/convert_cigar_minimap_to_lastz/test_secondary.out"
-#     make_lastz_output(sam_file, output_file, secondary_output_file)
+def main():
+    sam_file = "./small_chr21/toilified_output_10k_context_20_mapq_cutoff_2_remap_thresh_100_frag_renamed.sam"
+    output_file = "./test.out"
+    secondary_output_file = "./test_secondary.out"
+    
+    parser = ArgumentParser()
+    Job.Runner.addToilOptions(parser)
+    options = parser.parse_args()
+    options.clean = "always"
+    with Toil(options) as workflow:
+        sam_file_url = 'file://' + os.path.abspath(sam_file)
+        sam_id = workflow.importFile(sam_file_url)
 
-# if __name__ == "__main__":
-#     main()
+        (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+                make_lastz_output, sam_id))
+
+                
+        workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(output_file))
+        workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(secondary_output_file))
+
+    
+    
+    # make_lastz_output(sam_file, output_file, secondary_output_file)
+    
+    
+
+if __name__ == "__main__":
+    main()
+

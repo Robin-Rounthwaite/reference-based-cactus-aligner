@@ -6,6 +6,9 @@ aligns all the assemblies to the genome, and then excludes all sequences of size
 <mapq_cutoff. These sequences that fall below the mapQ cutoff are then realigned to 
 all non-reference sequences that aren't from their input assembly set of contigs.
 
+Note: "_segment_" keyword in the contig ids is used internally. Adding that to your contig
+ ids before running this pipeline may result in problems.
+
 #TODO: use mappy to streamline calls to minimap2, to avoid unnecessary io.
 https://pypi.org/project/mappy/2.2rc0/
 """
@@ -166,96 +169,6 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
 
     # return poor_mapping_sequence_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
     # return map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
-
-def relocate_remapped_fragments_to_source_contigs(job, mapping_file, fasta_file):
-    """
-    renames contig fragments from the remapping step to the original
-    contig name. Changes the cigar clipping based on the fragment rename, too. 
-    Arguments:
-        mapping_file {[type]} -- [description]
-        fasta_file {[type]} -- [description]
-    """
-    
-    modified_mapping_file = job.fileStore.getLocalTempFile()
-    contig_lengths  = directly_calculate_contig_lengths(job.fileStore.readGlobalFile(fasta_file))
-
-    with open(job.fileStore.readGlobalFile(mapping_file)) as inf:
-        with open(modified_mapping_file, "w") as outf:
-            print("hi")
-            for line in inf:
-                parsed = line.split()
-                if (int(parsed[1])%8)//4==1:
-                    # if the line is flagged as unmapped, just write it to the outfile.
-                    outf.write(line)
-                elif "segment" in parsed[0]:
-                    name_parsed = parsed[0].split("_")
-                    new_name = name_parsed[0]
-                    seg_start = name_parsed[-3]
-                    seg_stop = name_parsed[-1]
-                    cig_str = parsed[5]
-                    print(cig_str)
-                    cig = cigar.Cigar(cig_str)
-                    cig_list = list(cig.items())
-                    print("line before modification: ", line)
-                    #cig_temp_start is used to determine where the alignment starts *with relation
-                    # to the start of the contig fragment*. This is useful for calculating
-                    # cig_stop, below.
-
-                    alignment_start_pos_in_seg = int()
-                    if cig_list[0][1] in ["H", "S"]:
-                        alignment_start_pos_in_seg = int(cig_list[0][0])
-                    else:
-                        alignment_start_pos_in_seg = 0
-
-                    alignment_length = len(cig)
-                    if cig_list[0][1] == "S":
-                        alignment_length = alignment_length - cig_list[0][0]
-                    if cig_list[-1][1] == "S":
-                        alignment_length = alignment_length - cig_list[-1][0]
-
-                    alignment_end_pos_in_seg = alignment_start_pos_in_seg + alignment_length
-
-                    ## modify cig_start (the clipping at the beginning of the cigar)
-                    if cig_list[0][1] in ["H", "S"]:
-                        # then the mapping has a clipping at start. Modify cig_str clipping.
-                        print("cig_list before", cig_list[0])
-                        cig_list[0] = (int(cig_list[0][0]) + int(seg_start), cig_list[0][1])
-                        print("cig_list after", cig_list[0])
-                    elif seg_start:
-                        # then there is a nonzero seg_start, but there isn't a clipping for cig_str. Add clipping.
-                        cig_list.insert(0, (seg_start, "H"))
-
-                    ## modify clipping at the end of cig
-                    print("alignment_end_pos_in_seg", alignment_end_pos_in_seg, "seg_start", seg_start, "contig_lengths[new_name]", contig_lengths[new_name])
-                    if alignment_end_pos_in_seg + int(seg_start) < contig_lengths[new_name]:
-                        # then there is additional clipping that needs to be added to the end of the cig.
-                        end_clipping_len = contig_lengths[new_name] - (alignment_end_pos_in_seg + int(seg_start))
-                        if cig_list[-1][1] in ["H", "S"]:
-                            # then the mapping has a clipping at the end. Modify the clipping.
-                            #TODO: make it so you properly remove end clipping, not first two chars!
-                            cig_list[-1] = (end_clipping_len, cig_list[-1][1])
-                        else:
-                            #the mapping doesn't have a clipping. Add one.
-                            cig_list.append((end_clipping_len, "H"))
-                    
-                    # compose the new cig
-                    new_cig = ""
-                    for tup in cig_list:
-                        new_cig += str(tup[0]) + tup[1]
-
-                    #now, alter the line
-                    new_line = new_name + "\t" + "\t".join(parsed[1:5]) + "\t" + new_cig + "\t" + "\t".join(parsed[6:])
-                    print("line after modification: ", new_line)
-
-                    #add it to the outfile
-                    outf.write(new_line)
-                else:
-                    outf.write(line)
-
-    return job.fileStore.writeGlobalFile(modified_mapping_file)
-
-
-
 
 def map_assembly_to_ref(job, assembly_to_align_file, reference_file):
     map_to_ref_file = job.fileStore.getLocalTempFile()
@@ -512,7 +425,8 @@ def remap_poor_mapping_sequences(job, poor_mapping_sequence_file, assembly_to_al
     """
     minimap_calls = int()
     all_assemblies_but_to_align = assembly_files.copy()
-    all_assemblies_but_to_align.remove(assembly_to_align_file)
+    #todo: remove below line!! We want mappings between contigs in the same file.
+    # all_assemblies_but_to_align.remove(assembly_to_align_file)
 
     remapping_files = list()
     for target_mapping_file in all_assemblies_but_to_align:
@@ -536,7 +450,6 @@ def consolidate_mapping_files(job, mapping_files):
     Given a list of mapping files, consolidates the contents (not counting headers) into a
     single file.
     """
-    print("Consolidating mapping files.")
     consolidated_mappings = job.fileStore.getLocalTempFile()
     with open(consolidated_mappings,"w") as outfile:
         for x in mapping_files:
@@ -546,8 +459,94 @@ def consolidate_mapping_files(job, mapping_files):
                     if not line.startswith("@"):
                         outfile.write(line)
                     line_cnt += 1
-                print("number of lines in mapping file consolidated:", line_cnt)
     return job.fileStore.writeGlobalFile(consolidated_mappings)
+
+def relocate_remapped_fragments_to_source_contigs(job, mapping_file, fasta_file):
+    """
+    renames contig fragments from the remapping step to the original
+    contig name. Changes the cigar clipping based on the fragment's coordinates too. 
+    Arguments:
+        mapping_file {[type]} -- [description]
+        fasta_file {[type]} -- [description]
+    """
+    
+    modified_mapping_file = job.fileStore.getLocalTempFile()
+    contig_lengths  = directly_calculate_contig_lengths(job.fileStore.readGlobalFile(fasta_file))
+
+    with open(job.fileStore.readGlobalFile(mapping_file)) as inf:
+        with open(modified_mapping_file, "w") as outf:
+            for line in inf:
+                parsed = line.split()
+                if (int(parsed[1])%8)//4==1:
+                    # if the line is flagged as unmapped, just write it to the outfile.
+                    outf.write(line)
+                elif "segment" in parsed[0]:
+                    # construct the new name by dropping all the parts of the old name from "_segment_" onwards.
+                    name_parsed = parsed[0].split("_segment_")
+                    print("---------------------------------------------name_parsed:", name_parsed)
+                    new_name = name_parsed[0]
+
+                    # extract the start and stop of the 
+                    seg_start = name_parsed[1].split("_")[-3]
+                    seg_stop = name_parsed[1].split("_")[-1]
+                    cig_str = parsed[5]
+                    cig = cigar.Cigar(cig_str)
+                    cig_list = list(cig.items())
+                    #cig_temp_start is used to determine where the alignment starts *with relation
+                    # to the start of the contig fragment*. This is useful for calculating
+                    # cig_stop, below.
+
+                    alignment_start_pos_in_seg = int()
+                    if cig_list[0][1] in ["H", "S"]:
+                        alignment_start_pos_in_seg = int(cig_list[0][0])
+                    else:
+                        alignment_start_pos_in_seg = 0
+
+                    alignment_length = len(cig)
+                    if cig_list[0][1] == "S":
+                        alignment_length = alignment_length - cig_list[0][0]
+                    if cig_list[-1][1] == "S":
+                        alignment_length = alignment_length - cig_list[-1][0]
+
+                    alignment_end_pos_in_seg = alignment_start_pos_in_seg + alignment_length
+
+                    ## modify cig_start (the clipping at the beginning of the cigar)
+                    if cig_list[0][1] in ["H", "S"]:
+                        # then the mapping has a clipping at start. Modify cig_str clipping.
+                        cig_list[0] = (int(cig_list[0][0]) + int(seg_start), cig_list[0][1])
+                    elif seg_start:
+                        # then there is a nonzero seg_start, but there isn't a clipping for cig_str. Add clipping.
+                        cig_list.insert(0, (seg_start, "H"))
+
+                    ## modify clipping at the end of cig
+                    # print("alignment_end_pos_in_seg", alignment_end_pos_in_seg, "seg_start", seg_start, "contig_lengths[new_name]", contig_lengths[new_name])
+                    if alignment_end_pos_in_seg + int(seg_start) < contig_lengths[new_name]:
+                        # then there is additional clipping that needs to be added to the end of the cig.
+                        end_clipping_len = contig_lengths[new_name] - (alignment_end_pos_in_seg + int(seg_start))
+                        if cig_list[-1][1] in ["H", "S"]:
+                            # then the mapping has a clipping at the end. Modify the clipping.
+                            #TODO: make it so you properly remove end clipping, not first two chars!
+                            cig_list[-1] = (end_clipping_len, cig_list[-1][1])
+                        else:
+                            #the mapping doesn't have a clipping. Add one.
+                            cig_list.append((end_clipping_len, "H"))
+                    
+                    # compose the new cig
+                    new_cig = ""
+                    for tup in cig_list:
+                        new_cig += str(tup[0]) + tup[1]
+
+                    #now, alter the line
+                    new_line = new_name + "\t" + "\t".join(parsed[1:5]) + "\t" + new_cig + "\t" + "\t".join(parsed[6:])
+                    # print("line after modification: ", new_line)
+
+                    #add it to the outfile
+                    outf.write(new_line)
+                else:
+                    outf.write(line)
+
+    return job.fileStore.writeGlobalFile(modified_mapping_file)
+
 
 def main(options=None):
     # if not options:
@@ -606,7 +605,7 @@ def main(options=None):
                     workflow.exportFile(edited_assembly, 'file://' + edited_assemblies_save_folder + old_assembly_name)
 
                 # now, replace assembly_files with the edited assembly_files:
-                assembly_file_names = edited_assembly_files
+                assembly_files = edited_assembly_files
 
             # perform the alignments:
             alignments = workflow.start(Job.wrapJobFn(
@@ -639,9 +638,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
     parser.add_argument(
-        '--primary_output_file', default="small_chr21_test_primary.sam", help='replace_me', type=str)
+        '--primary_output_file', default="small_chr21_test_primary.out", help='replace_me', type=str)
     parser.add_argument(
-        '--secondary_output_file', default="small_chr21_test_secondary.sam", help='replace_me', type=str)
+        '--secondary_output_file', default="small_chr21_test_secondary.out", help='replace_me', type=str)
     # parser.add_argument(
     #     '--primary_output_file', default="lastz_primary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
     # parser.add_argument(
