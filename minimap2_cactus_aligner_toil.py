@@ -1,4 +1,3 @@
-
 """
 Given a directory of asseblies (.fa) for alignment to a reference genome fasta,
 aligns all the assemblies to the genome, and then excludes all sequences of size 
