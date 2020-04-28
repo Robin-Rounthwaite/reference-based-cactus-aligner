@@ -579,9 +579,9 @@ def main(options=None):
                 # any that are duplicates.
                 edited_assembly_files = workflow.start(Job.wrapJobFn(rename_duplicate_contig_ids, assembly_files))
                 
-                print("++++++++++++++++++++++++++++++++++++++++++++++++==in options.copy_assemblies = ", options.copy_assemblies)
-                if options.copy_assemblies == False:
-                    print("***++++++++++++++++++++++++++++++++++++++++++++++++==in options.copy_assemblies = ", options.copy_assemblies)
+                print("++++++++++++++++++++++++++++++++++++++++++++++++==in options.overwrite_assemblies = ", options.overwrite_assemblies)
+                if options.overwrite_assemblies == True:
+                    print("***++++++++++++++++++++++++++++++++++++++++++++++++==in options.overwrite_assemblies = ", options.overwrite_assemblies)
                     for i in range(len(edited_assembly_files)):
                         workflow.exportFile(edited_assembly_files[i], 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_names[i])
                 else:
@@ -655,9 +655,9 @@ if __name__ == "__main__":
     # parser.add_argument('--no_duplicate_contig_ids', default=True, action='store_true', help='replace_me', type=bool)
     parser.add_argument('--no_duplicate_contig_ids', type=str2bool, nargs='?', const=True, default=False,
                         help="replace_me")
-    # parser.add_argument('--copy_assemblies', default=True, action='store_true',
+    # parser.add_argument('--overwrite_assemblies', default=True, action='store_true',
     #                     help='When cleaning the assembly files to make sure there are no duplicate contig ids in the input, overwrites the input assembly files when set to True. If clean_contig_ids is false, does nothing.', type=bool)
-    parser.add_argument('--copy_assemblies', type=str2bool, nargs='?', const=True, default=False,
+    parser.add_argument('--overwrite_assemblies', type=str2bool, nargs='?', const=True, default=False,
                         help="When cleaning the assembly files to make sure there are no duplicate contig ids, don't overwrite the assembly files. Copy them to a neigboring folder with the affix '_edited_for_duplicate_contig_ids' instead.")
     parser.add_argument('--mapq_cutoff', default=20,
                         help='replace_me', type=int)
@@ -665,7 +665,7 @@ if __name__ == "__main__":
                         help='replace_me', type=int)
 
     options = parser.parse_args()
-    print("options.copy_assemblies before main:", options.copy_assemblies)
+    print("options.overwrite_assemblies before main:", options.overwrite_assemblies)
     # options.test_fasta_file = "small_chr21/assemblies/HG03098_paf_chr21.fa"
     main(options=options)
     # main()
