@@ -36,7 +36,7 @@ def empty(job):
     """
     return
 
-def rename_duplicate_contig_ids(job, assembly_files):
+def rename_duplicate_contig_ids(job, assembly_files, overwrite=True):
     """
     Sometimes, when combining assemblies from multiple sources, multiple contigs get the 
     same name. This function slightly modifies all but one of the contigs with the same
@@ -56,48 +56,51 @@ def rename_duplicate_contig_ids(job, assembly_files):
     contig_ids = set()
     unique_id = int()
 
-    renamed_assembly_files = list()
+    if overwrite == False:
+        # then we'll need to track the new files.
+        new_assembly_files = list()
 
     for assembly in assembly_files:
         assembly_file = job.fileStore.readGlobalFile(assembly)
         assembly_contigs = SeqIO.parse(assembly_file, "fasta")
-        new_assembly = job.fileStore.getLocalTempFile()
         output_contigs = list()
         
         for contig in assembly_contigs:
-            # print("---------------------------------------------------------------looking at contig.id:", contig.id)
-            debug = contig.id
+            
             if contig.id in contig_ids:
-                # print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++found a duplicate contig.id:", contig.id)
                 old_id = contig.id
+                
                 while contig.id in contig_ids:
-                    # print("in while loop, with old_id", contig.id)
-                    # if old_id == "5238":
-                    #     print("---------------------------------------------------------------current version of contig.id 5238:", contig.id)
-                    #     print("---------------------------------------------------------------current version of contig.description 5238:", contig.description)
                     # then there is a duplicate contig_id. edit this one.
                     # keep changing the contig_id until we get a completely unique id.
                     contig.id = old_id + "_renamed_" + str(unique_id)
                     contig.description = old_id + "_renamed_" + str(unique_id)
                     unique_id += 1
-                    # if old_id == "5238":
-                    #     print("---------------------------------------------------------------current version of contig.id 5238, after altering:", contig.id)
-                    #     print("---------------------------------------------------------------current version of contig.description 5238, after altering:", contig.description)
+                    
                 #record the new contig id as an observed id.
                 contig_ids.add(contig.id)
                 
             else:
                 # this isn't a duplicate contig_id. record it.
                 contig_ids.add(contig.id)
-            # if debug == "5238" or debug == "6348":
+
             output_contigs.append(contig)
 
-        # write the altered assembly.
-        SeqIO.write(output_contigs, new_assembly, "fasta")
-        renamed_assembly_files.append(job.fileStore.writeGlobalFile(new_assembly))
-    
-    return renamed_assembly_files
-    
+        if overwrite == False:
+            # write the altered assembly.
+            new_assembly = job.fileStore.getLocalTempFile()
+            SeqIO.write(output_contigs, new_assembly, "fasta")
+            new_assembly_files.append(job.fileStore.writeGlobalFile(new_assembly))
+        else:
+            # write the altered assembly to original file.    
+            SeqIO.write(output_contigs, assembly_file, "fasta")
+
+    if overwrite == False:
+        # return the file ids of the altered assembly files.
+        return new_assembly_files
+    else:
+        # return the file ids of the original, overwritten assembly files.
+        return assembly_files
 
 def align_all_assemblies(job, reference_file, assembly_files, options):
     """
