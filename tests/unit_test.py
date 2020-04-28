@@ -79,7 +79,7 @@ def test_rename_duplicate_contig_ids_overwrite():
             assembly_ids.append(workflow.importFile('file://' + assembly_file))
 
         # run the function being tested
-        new_assembly_ids = workflow.start(Job.wrapJobFn(cactus_aligner.rename_duplicate_contig_ids, assembly_ids, overwrite=True))
+        new_assembly_ids = workflow.start(Job.wrapJobFn(cactus_aligner.rename_duplicate_contig_ids, assembly_ids))
 
         # export the files from the workflow
         for i in range(len(new_assembly_ids)):

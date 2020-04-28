@@ -36,7 +36,7 @@ def empty(job):
     """
     return
 
-def rename_duplicate_contig_ids(job, assembly_files, overwrite=True):
+def rename_duplicate_contig_ids(job, assembly_files):
     """
     Sometimes, when combining assemblies from multiple sources, multiple contigs get the 
     same name. This function slightly modifies all but one of the contigs with the same
@@ -50,15 +50,10 @@ def rename_duplicate_contig_ids(job, assembly_files, overwrite=True):
     x = original contig id
     y = unique_integer
     new id = x_renamed_y
-
     """
     
     contig_ids = set()
     unique_id = int()
-
-    if overwrite == False:
-        # then we'll need to track the new files.
-        new_assembly_files = list()
 
     for assembly in assembly_files:
         assembly_file = job.fileStore.readGlobalFile(assembly)
@@ -86,21 +81,11 @@ def rename_duplicate_contig_ids(job, assembly_files, overwrite=True):
 
             output_contigs.append(contig)
 
-        if overwrite == False:
-            # write the altered assembly.
-            new_assembly = job.fileStore.getLocalTempFile()
-            SeqIO.write(output_contigs, new_assembly, "fasta")
-            new_assembly_files.append(job.fileStore.writeGlobalFile(new_assembly))
-        else:
-            # write the altered assembly to original file.    
-            SeqIO.write(output_contigs, assembly_file, "fasta")
+        # write the altered assembly to original file.    
+        SeqIO.write(output_contigs, assembly_file, "fasta")
 
-    if overwrite == False:
-        # return the file ids of the altered assembly files.
-        return new_assembly_files
-    else:
-        # return the file ids of the original, overwritten assembly files.
-        return assembly_files
+    # return the file ids of the original, overwritten assembly files.
+    return assembly_files
 
 def align_all_assemblies(job, reference_file, assembly_files, options):
     """
@@ -589,43 +574,57 @@ def main(options=None):
                 assembly_file_url = 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_name
                 assembly_files.append(workflow.importFile(assembly_file_url))
 
-            if options.clean_contig_ids == True:
+            if options.no_duplicate_contig_ids == False:
                 # if the user hasn't guaranteed that the contig ids are all unique, then rename 
                 # any that are duplicates.
                 edited_assembly_files = workflow.start(Job.wrapJobFn(rename_duplicate_contig_ids, assembly_files))
-
-                # make sure that the folder we want to save the assembly files in exists:
-                edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "_edited_for_duplicate_contig_ids/"
-                if not os.path.isdir(edited_assemblies_save_folder):
-                    os.mkdir(edited_assemblies_save_folder)
-                for i in range(len(edited_assembly_files)):
-                    # rename_duplicated_contig_ids outputs the edited_assembly_files in the same order as the input list of original assembly files.
-                    old_assembly_name = assembly_file_names[i]
-                    edited_assembly = edited_assembly_files[i]
-
-
-                    # save the new assembly files:
-                    workflow.exportFile(edited_assembly, 'file://' + edited_assemblies_save_folder + old_assembly_name)
+                
+                print("++++++++++++++++++++++++++++++++++++++++++++++++==in options.copy_assemblies = ", options.copy_assemblies)
+                if options.copy_assemblies == False:
+                    print("***++++++++++++++++++++++++++++++++++++++++++++++++==in options.copy_assemblies = ", options.copy_assemblies)
+                    for i in range(len(edited_assembly_files)):
+                        workflow.exportFile(edited_assembly_files[i], 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_names[i])
+                else:
+                    # make sure that the folder we want to save the assembly files in exists:
+                    edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "_edited_for_duplicate_contig_ids/"
+                    if not os.path.isdir(edited_assemblies_save_folder):
+                        os.mkdir(edited_assemblies_save_folder)
+                    for i in range(len(edited_assembly_files)):
+                        # rename_duplicated_contig_ids outputs the edited_assembly_files in the same order as the input list of original assembly files.
+                        old_assembly_name = assembly_file_names[i]
+                        edited_assembly = edited_assembly_files[i]
+                        # save the new assembly files:
+                        workflow.exportFile(edited_assembly, 'file://' + edited_assemblies_save_folder + old_assembly_name)
 
                 # now, replace assembly_files with the edited assembly_files:
                 assembly_files = edited_assembly_files
 
-            # perform the alignments:
-            alignments = workflow.start(Job.wrapJobFn(
-                align_all_assemblies,  ref_id, assembly_files, options=options))
+            # # perform the alignments:
+            # alignments = workflow.start(Job.wrapJobFn(
+            #     align_all_assemblies,  ref_id, assembly_files, options=options))
 
-            # reformat the alignments as lastz cigars:
-            (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
-                make_lastz_output, alignments))
+            # # reformat the alignments as lastz cigars:
+            # (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+            #     make_lastz_output, alignments))
                 
-            workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
-            workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
+            # workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
+            # workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
 
         else:
             output = workflow.restart()
 
         # workflow.exportFile(alignments, 'file://' + os.path.abspath(options.debug_output_file))
 
+    
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
     
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -653,13 +652,20 @@ if __name__ == "__main__":
     # parser.add_argument(
     #     '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/toilified_output_10k_context_20_mapq_cutoff.sam", help='replace_me', type=str)
     parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
-    parser.add_argument('--clean_contig_ids', default=True, help='replace_me', type=bool)
+    # parser.add_argument('--no_duplicate_contig_ids', default=True, action='store_true', help='replace_me', type=bool)
+    parser.add_argument('--no_duplicate_contig_ids', type=str2bool, nargs='?', const=True, default=False,
+                        help="replace_me")
+    # parser.add_argument('--copy_assemblies', default=True, action='store_true',
+    #                     help='When cleaning the assembly files to make sure there are no duplicate contig ids in the input, overwrites the input assembly files when set to True. If clean_contig_ids is false, does nothing.', type=bool)
+    parser.add_argument('--copy_assemblies', type=str2bool, nargs='?', const=True, default=False,
+                        help="When cleaning the assembly files to make sure there are no duplicate contig ids, don't overwrite the assembly files. Copy them to a neigboring folder with the affix '_edited_for_duplicate_contig_ids' instead.")
     parser.add_argument('--mapq_cutoff', default=20,
                         help='replace_me', type=int)
     parser.add_argument('--sequence_context', default=10000,
                         help='replace_me', type=int)
 
     options = parser.parse_args()
-    options.test_fasta_file = "small_chr21/assemblies/HG03098_paf_chr21.fa"
+    print("options.copy_assemblies before main:", options.copy_assemblies)
+    # options.test_fasta_file = "small_chr21/assemblies/HG03098_paf_chr21.fa"
     main(options=options)
     # main()
