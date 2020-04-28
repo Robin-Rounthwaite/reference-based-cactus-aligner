@@ -559,14 +559,12 @@ def main(options=None):
     with Toil(options) as workflow:
         if not workflow.options.restart:
             # reference file
-            print(os.path.abspath(options.ref_file))
             ref_file_url = 'file://' + os.path.abspath(options.ref_file)
-            print(ref_file_url)
             ref_id = workflow.importFile(ref_file_url)
 
             # list of assembly files
             assembly_file_names = os.listdir(options.assemblies_dir)
-            print(assembly_file_names)
+
             assembly_files = list()
             for assembly_file_name in assembly_file_names:
                 assembly_file_url = 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_name
@@ -582,7 +580,7 @@ def main(options=None):
                         workflow.exportFile(edited_assembly_files[i], 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_names[i])
                 else:
                     # make sure that the folder we want to save the assembly files in exists:
-                    edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "_edited_for_duplicate_contig_ids/"
+                    edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "/" + "_edited_for_duplicate_contig_ids/"
                     if not os.path.isdir(edited_assemblies_save_folder):
                         os.mkdir(edited_assemblies_save_folder)
                     for i in range(len(edited_assembly_files)):
@@ -623,14 +621,32 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     Job.Runner.addToilOptions(parser)
     # small chr21 example:
+    # parser.add_argument(
+    #     '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
+    # parser.add_argument(
+    #     '--assemblies_dir', default="small_chr21/assemblies/", help='replace_me', type=str)
+    # parser.add_argument(
+    #     '--primary_output_file', default="small_chr21_test_primary.out", help='replace_me', type=str)
+    # parser.add_argument(
+    #     '--secondary_output_file', default="small_chr21_test_secondary.out", help='replace_me', type=str)
+    # parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
+    # parser.add_argument('--no_duplicate_contig_ids', type=str2bool, nargs='?', const=True, default=False,
+    #                     help="replace_me")
+    # parser.add_argument('--overwrite_assemblies', type=str2bool, nargs='?', const=True, default=False,
+    #                     help="When cleaning the assembly files to make sure there are no duplicate contig ids, don't overwrite the assembly files. Copy them to a neigboring folder with the affix '_edited_for_duplicate_contig_ids' instead.")
+    # parser.add_argument('--mapq_cutoff', default=20,
+    #                     help='replace_me', type=int)
+    # parser.add_argument('--sequence_context', default=10000,
+    #                     help='replace_me', type=int)
+                        
     parser.add_argument(
-        '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
+        'ref_file', help='The reference fasta file for the initial alignment phase of the reference-based-cactus-aligner.', type=str)
     parser.add_argument(
-        '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
+        'assemblies_dir', help='replace_me', type=str)
     parser.add_argument(
-        '--primary_output_file', default="small_chr21_test_primary.out", help='replace_me', type=str)
+        '--primary_output_file', default="primary.cigar", help='replace_me', type=str)
     parser.add_argument(
-        '--secondary_output_file', default="small_chr21_test_secondary.out", help='replace_me', type=str)
+        '--secondary_output_file', default="secondary.cigar", help='replace_me', type=str)
     parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
     parser.add_argument('--no_duplicate_contig_ids', type=str2bool, nargs='?', const=True, default=False,
                         help="replace_me")
@@ -641,5 +657,7 @@ if __name__ == "__main__":
     parser.add_argument('--sequence_context', default=10000,
                         help='replace_me', type=int)
 
+
     options = parser.parse_args()
+    
     main(options=options)
