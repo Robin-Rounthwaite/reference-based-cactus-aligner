@@ -579,9 +579,7 @@ def main(options=None):
                 # any that are duplicates.
                 edited_assembly_files = workflow.start(Job.wrapJobFn(rename_duplicate_contig_ids, assembly_files))
                 
-                print("++++++++++++++++++++++++++++++++++++++++++++++++==in options.overwrite_assemblies = ", options.overwrite_assemblies)
                 if options.overwrite_assemblies == True:
-                    print("***++++++++++++++++++++++++++++++++++++++++++++++++==in options.overwrite_assemblies = ", options.overwrite_assemblies)
                     for i in range(len(edited_assembly_files)):
                         workflow.exportFile(edited_assembly_files[i], 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_names[i])
                 else:
@@ -599,23 +597,20 @@ def main(options=None):
                 # now, replace assembly_files with the edited assembly_files:
                 assembly_files = edited_assembly_files
 
-            # # perform the alignments:
-            # alignments = workflow.start(Job.wrapJobFn(
-            #     align_all_assemblies,  ref_id, assembly_files, options=options))
+            # perform the alignments:
+            alignments = workflow.start(Job.wrapJobFn(
+                align_all_assemblies,  ref_id, assembly_files, options=options))
 
-            # # reformat the alignments as lastz cigars:
-            # (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
-            #     make_lastz_output, alignments))
+            # reformat the alignments as lastz cigars:
+            (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+                make_lastz_output, alignments))
                 
-            # workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
-            # workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
+            workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
+            workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
 
         else:
             output = workflow.restart()
 
-        # workflow.exportFile(alignments, 'file://' + os.path.abspath(options.debug_output_file))
-
-    
 def str2bool(v):
     if isinstance(v, bool):
        return v
@@ -632,31 +627,15 @@ if __name__ == "__main__":
     # small chr21 example:
     parser.add_argument(
         '--ref_file', default="chr21/hg38_chr21.fa", help='replace_me', type=str)
-        # '--ref_file', default="/chr21/hg38_chr21.fa", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/chr21/assemblies", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--debug_output_file', default="small_chr21/minimap2_output.sam", help='replace_me', type=str)
     parser.add_argument(
         '--assemblies_dir', default="small_chr21/assemblies", help='replace_me', type=str)
     parser.add_argument(
         '--primary_output_file', default="small_chr21_test_primary.out", help='replace_me', type=str)
     parser.add_argument(
         '--secondary_output_file', default="small_chr21_test_secondary.out", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--primary_output_file', default="lastz_primary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--secondary_output_file', default="lastz_secondary_output_10k_context_20_mapq_cutoff_2_remap_thresh_100.sam", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--assemblies_dir', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/assemblies", help='replace_me', type=str)
-    # parser.add_argument(
-    #     '--output_file', default="/home/robin/paten_lab/kube_toil_minimap2_cactus/map_624_small_chr21/toilified_output_10k_context_20_mapq_cutoff.sam", help='replace_me', type=str)
     parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
-    # parser.add_argument('--no_duplicate_contig_ids', default=True, action='store_true', help='replace_me', type=bool)
     parser.add_argument('--no_duplicate_contig_ids', type=str2bool, nargs='?', const=True, default=False,
                         help="replace_me")
-    # parser.add_argument('--overwrite_assemblies', default=True, action='store_true',
-    #                     help='When cleaning the assembly files to make sure there are no duplicate contig ids in the input, overwrites the input assembly files when set to True. If clean_contig_ids is false, does nothing.', type=bool)
     parser.add_argument('--overwrite_assemblies', type=str2bool, nargs='?', const=True, default=False,
                         help="When cleaning the assembly files to make sure there are no duplicate contig ids, don't overwrite the assembly files. Copy them to a neigboring folder with the affix '_edited_for_duplicate_contig_ids' instead.")
     parser.add_argument('--mapq_cutoff', default=20,
@@ -665,7 +644,4 @@ if __name__ == "__main__":
                         help='replace_me', type=int)
 
     options = parser.parse_args()
-    print("options.overwrite_assemblies before main:", options.overwrite_assemblies)
-    # options.test_fasta_file = "small_chr21/assemblies/HG03098_paf_chr21.fa"
     main(options=options)
-    # main()
