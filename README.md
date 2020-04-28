@@ -4,5 +4,5 @@ Faster than an all-to-all alignment for constructing cactus graphs. Starts by al
 ## Install
 ### To clone:
 git clone https://github.com/Robin-Rounthwaite/reference-based-cactus-constructor.git
-### python prerequisites
+### Python prerequisites:
 pip install toil[aws,google,htcondor,encryption,cwl,wdl] biopython argparse cigar 
