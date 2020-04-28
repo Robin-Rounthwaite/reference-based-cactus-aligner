@@ -470,7 +470,6 @@ def relocate_remapped_fragments_to_source_contigs(job, mapping_file, fasta_file)
                 elif "segment" in parsed[0]:
                     # construct the new name by dropping all the parts of the old name from "_segment_" onwards.
                     name_parsed = parsed[0].split("_segment_")
-                    print("---------------------------------------------name_parsed:", name_parsed)
                     new_name = name_parsed[0]
 
                     # extract the start and stop of the 
