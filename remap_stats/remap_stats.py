@@ -1,7 +1,3 @@
-#%%
-print("hello world!")
-
-#%%
 """
 Get statistics on coverage on all assembly contigs (not counting the reference.)
 #todo: add in reference base counting? 
@@ -309,68 +305,18 @@ def main(options=None):
     contig_lengths = get_all_contig_lengths(assembly_files)
     ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped = get_sequence_coverage(mapping_files, assembly_files, chroms_in_ref, contig_lengths, options.minimum_size_remap, options.sequence_context)
     print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths)
-    #todo: return here is for debug purposes in jupyter.
-    return ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths
+    # #todo: return here is for debug purposes in jupyter.
+    # return ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths
 
 
 if __name__ == "__main__":
-    # main()
+    main()
     #for testing the small_chr21 test set:
-    parser = ArgumentParser()
-    options, unknown = parser.parse_known_args()
-    options.mappings_dir = "small_chr21_output/"
-    options.assemblies_dir = "../small_chr21/assemblies_edited_for_duplicate_contig_ids/"
-    options.ref_file = "../chr21/hg38_chr21.fa"
-    options.minimum_size_remap = 100
-    options.sequence_context = 10000
-    ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths = main(options=options)
-
-
-# %%
-"""
-For playing with following questions:
-    What percentage of bases are involved in mappings from the primary phase? 
-    What about from the secondary phase? 
-    From both combined?
-"""
-#first: how many bases are there involved in the assemblies?
-bases_total = int()
-for length in contig_lengths.values():
-    bases_total += length
-print("total number of bases in all input assemblies:", bases_total) 
-print()
-#what is the percentage of bases involved in mappings from each phase?
-print("***analysis of ref_based mappings:***")
-ref_based_bases_covered = int()
-for length in ref_based_mapping_coverage_lengths.values():
-    ref_based_bases_covered += length
-print("bases covered in ref_based mappings:", ref_based_bases_covered)
-print("percentage of bases covered by mappings from ref_based:", (ref_based_bases_covered/bases_total)*100, "%")
-
-print()
-print("***analysis of all_to_all mappings:***")
-all_to_all_bases_covered = int()
-for length in all_to_all_mapping_coverage_lengths.values():
-    all_to_all_bases_covered += length
-print("bases covered in ref_based mappings:", all_to_all_bases_covered)
-print("percentage of bases covered by mappings from all_to_all:", (all_to_all_bases_covered/bases_total)*100, "%")
-
-print()
-print("total percentage of bases covered by mappings:", ((ref_based_bases_covered + all_to_all_bases_covered)/bases_total)*100, "%")
-
-print()
-print("***analysis of sequence_lengths_remapped:***")
-bases_remapped = int()
-for length in sequence_lengths_remapped.values():
-    bases_remapped += length
-print("bases passed to all-to-all phase:", bases_remapped)
-print("percentage of bases sent to all-to-all phase:", (bases_remapped/bases_total)*100, "%")
-print()
-print("ratio of (bases covered by mappings in all-to-all)/(bases sent to all-to-all-phase) :", ((all_to_all_bases_covered/bases_remapped)))
-
-
-#%%
-"""
-For answering this final question:
-    Are there any contigs that are exceptionally poorly mapped?
-"""
+    # parser = ArgumentParser()
+    # options, unknown = parser.parse_known_args()
+    # options.mappings_dir = "small_chr21_output/"
+    # options.assemblies_dir = "../small_chr21/assemblies_edited_for_duplicate_contig_ids/"
+    # options.ref_file = "../chr21/hg38_chr21.fa"
+    # options.minimum_size_remap = 100
+    # options.sequence_context = 10000
+    # ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths = main(options=options)
