@@ -310,6 +310,8 @@ def main(options=None):
 
 
 if __name__ == "__main__":
+    # command line call to test the small_chr21 test set with normal main():
+    # python remap_stats.py ../chr21/hg38_chr21.fa ../small_chr21/assemblies_edited_for_duplicate_contig_ids/ small_chr21_output/
     main()
     #for testing the small_chr21 test set:
     # parser = ArgumentParser()
