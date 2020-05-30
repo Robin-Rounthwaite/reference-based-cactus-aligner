@@ -234,7 +234,7 @@ def get_sequence_coverage(mapping_files, assembly_files, chroms_in_ref, contig_l
 
     return ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped
 
-def print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths):
+def print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths, contig_stats, raw_data):
     """
     For playing with following questions:
         What percentage of bases are involved in mappings from the primary phase? 
@@ -268,7 +268,7 @@ def print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_
     print("total percentage of bases covered by mappings:", ((ref_based_bases_covered + all_to_all_bases_covered)/bases_total)*100, "%")
 
     print()
-    print("***analysis of sequences passed to the all-to-all alignment phase:***")
+    print("***analysis of quantity of sequence passed to the all-to-all alignment phase:***")
     bases_remapped = int()
     for length in sequence_lengths_remapped.values():
         bases_remapped += length
@@ -277,6 +277,25 @@ def print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_
     print()
     print("ratio of (bases covered by mappings in all-to-all)/(bases sent to all-to-all-phase) :", ((all_to_all_bases_covered/bases_remapped)))
 
+    if contig_stats:
+        print()
+        print("***analysis of coverage levels on individual contigs in assemblies:***")
+        for contig_id in contig_lengths:
+            print()
+            print("stats_for " + contig_id + ":")
+            print("contig_length:", contig_lengths[contig_id])
+            print("bases_mapped_in_ref_based_phase/contig_length", ref_based_mapping_coverage_lengths[contig_id]/contig_lengths[contig_id])
+            print("bases_passed_to_all_to_all_phase/contig_length", sequence_lengths_remapped[contig_id]/contig_lengths[contig_id])
+            print("bases_mapped_in_all_to_all_phase/contig_length", all_to_all_mapping_coverage_lengths[contig_id]/contig_lengths[contig_id])
+
+    if raw_data:
+        print()
+        print("***printing out raw data as python dictionaries:***")
+        print("ref_based_mapping_coverage_lengths:\n", ref_based_mapping_coverage_lengths) 
+        print("all_to_all_mapping_coverage_lengths:\n", all_to_all_mapping_coverage_lengths) 
+        print("sequence_lengths_remapped:\n", sequence_lengths_remapped) 
+        print("contig_lengths:\n", contig_lengths)
+            
 
 def main(options=None):
     if not options:
@@ -290,9 +309,11 @@ def main(options=None):
         parser.add_argument('mappings_dir', help='replace_me', type=str)
         parser.add_argument('--minimum_size_remap', default=100, help='replace_me', type=int)
         parser.add_argument('--sequence_context', default=10000, help='replace_me', type=int)
+        parser.add_argument('--contig_stats', action='store_true')
+        parser.add_argument('--raw_data', action='store_true')
         options = parser.parse_args()
 
-    ## parsing options:
+    ## parsing options:s
     # list of mapping files
     mapping_files = os.listdir(options.mappings_dir)
     mapping_files = [options.mappings_dir + mapping_files[i] for i in range(len(mapping_files))]
@@ -304,14 +325,14 @@ def main(options=None):
 
     contig_lengths = get_all_contig_lengths(assembly_files)
     ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped = get_sequence_coverage(mapping_files, assembly_files, chroms_in_ref, contig_lengths, options.minimum_size_remap, options.sequence_context)
-    print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths)
+    print_stats(ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths, options.contig_stats, options.raw_data)
     # #todo: return here is for debug purposes in jupyter.
     # return ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths
 
 
 if __name__ == "__main__":
-    # command line call to test the small_chr21 test set with normal main():
-    # python remap_stats.py ../chr21/hg38_chr21.fa ../small_chr21/assemblies_edited_for_duplicate_contig_ids/ small_chr21_output/
+    ### example command line call to test the small_chr21 test set with normal main():
+    ### python remap_stats.py ../chr21/hg38_chr21.fa ../small_chr21/assemblies_edited_for_duplicate_contig_ids/ small_chr21_output/
     main()
     #for testing the small_chr21 test set:
     # parser = ArgumentParser()
@@ -321,4 +342,6 @@ if __name__ == "__main__":
     # options.ref_file = "../chr21/hg38_chr21.fa"
     # options.minimum_size_remap = 100
     # options.sequence_context = 10000
+    # options.contig_stats = True
+    # options.raw_data = True
     # ref_based_mapping_coverage_lengths, all_to_all_mapping_coverage_lengths, sequence_lengths_remapped, contig_lengths = main(options=options)
