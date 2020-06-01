@@ -56,7 +56,14 @@ def get_mapping_coords_from_mapping_files(mapping_files, chroms_in_ref):
                         all_to_all_mapping_coords[parsed[1]].append((int(parsed[2]), int(parsed[3])))
                     elif parsed[4] == "-":
                         all_to_all_mapping_coords[parsed[1]].append((int(parsed[3]), int(parsed[2])))
-                    
+                    # Also need to include the alignment coverage on the target sequence:
+                    if parsed[8] == "+":
+                        # note: output from my pipeline always has target on + strand. 
+                        # If statement included for robustness of code
+                        all_to_all_mapping_coords[parsed[5]].append((int(parsed[6]), int(parsed[7])))
+                    if parsed[8] == "-":
+                        all_to_all_mapping_coords[parsed[5]].append((int(parsed[7]), int(parsed[6])))
+                        
     return ref_based_mapping_coords, all_to_all_mapping_coords
 
 def get_coverage_points_from_mapping_coords(mapping_coords):
