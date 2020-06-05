@@ -28,6 +28,8 @@ import operator
 import shutil
 
 from sam_to_lastz_cigar import make_lastz_output
+from remap_stats.online_remap_stats import online_remap_stats
+
 
 def empty(job):
     """
@@ -104,22 +106,13 @@ def align_all_assemblies(job, reference_file, assembly_files, remap_stats_intern
     head_job_2.rv()
 
     if options.remap_stats:
-        head_job_2.addChildJobFn(remap_stats_save_assembly_sizes, all_contig_lengths, remap_stats_internal_file)
+        head_job_2.addChildJobFn(online_remap_stats.save_input_assembly_stats, all_contig_lengths, remap_stats_internal_file, options)
 
-    # for assembly_to_align_file in assembly_files:
-    #     assembly_mapping_file = head_job_2.addFollowOnJobFn(align_assembly, reference_file, assembly_files, assembly_to_align_file, all_contig_lengths, options).rv()
-    #     mapping_files.append(assembly_mapping_file)
+    for assembly_to_align_file in assembly_files:
+        assembly_mapping_file = head_job_2.addFollowOnJobFn(align_assembly, reference_file, assembly_files, assembly_to_align_file, all_contig_lengths, remap_stats_internal_file, options).rv()
+        mapping_files.append(assembly_mapping_file)
 
-    # return job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
-
-def remap_stats_save_assembly_sizes(job, all_contig_lengths, remap_stats_internal_file):
-    with open(job.fileStore.readGlobalFile(remap_stats_internal_file), "w+") as f:
-        f.write("sequences included in each assembly file: \n")
-        for assembly, seq_lens in all_contig_lengths.items():
-            total_seq_len = int()
-            for seq_len in seq_lens.values():
-                total_seq_len += seq_len
-            f.write(assembly + "\t" + str(total_seq_len) + "\n")
+    return job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
 
 def calc_all_contig_lengths(job, reference_file, assembly_files):
     # calculate lengths of all input contigs. + reference:
@@ -129,17 +122,13 @@ def calc_all_contig_lengths(job, reference_file, assembly_files):
         all_contig_lengths[assembly] = job.addChildJobFn(directly_calculate_contig_lengths, assembly).rv()
     return all_contig_lengths
     
-def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, all_contig_lengths, options):
+def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, all_contig_lengths, remap_stats_internal_file, options):
     """
     Aligns assembly_to_align_file to the reference, then aligns poorly-mapping regions to the rest of assembly_files.
     """
     # mapping_files compiles all the mappings to reference and mappings between assemblies.
     mapping_files = list()
     
-    # contig_lengths = directly_calculate_contig_lengths(assembly_to_align_file)
-    print("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*all_contig_lengths follows:")
-    
-    print(all_contig_lengths)
     contig_lengths = all_contig_lengths[assembly_to_align_file]
 
     ## map to reference phase:
@@ -147,7 +136,6 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
     map_to_ref_job = job.addChildJobFn(map_assembly_to_ref, assembly_to_align_file, reference_file)
     map_to_ref_file = map_to_ref_job.rv()
     mapping_files.append(map_to_ref_file)
-    # map_to_ref_job.addChildJobFn(debug_get_contig_mappings, map_to_ref_file, 20)
 
     ## re-mapping phase, from regions of the assemblies that map poorly to the reference, 
     ## to all the assembly sequence.
@@ -173,10 +161,17 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
     poor_mapping_sequence_file_job = poor_mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_sequences, assembly_to_align_file, poor_mapping_coverage_coords)
     poor_mapping_sequence_file = poor_mapping_sequence_file_job.rv()
 
+    if options.remap_stats:
+        poor_mapping_sequence_file_job.addFollowOnJobFn(online_remap_stats.save_sequence_remapped_stats, assembly_to_align_file, poor_mapping_sequence_file, remap_stats_internal_file, options).rv()
+
     # # map the poor mapping sequence to all the other assemblies!
     map_to_assemblies_file_job = poor_mapping_sequence_file_job.addFollowOnJobFn(remap_poor_mapping_sequences, poor_mapping_sequence_file, assembly_to_align_file, assembly_files)
-    mapping_files.append(map_to_assemblies_file_job.rv())
-    # map_to_assemblies_file_job.addChildJobFn(debug_get_contig_mappings, mapping_files[-1], 20)
+    all_to_all_mapping_files = map_to_assemblies_file_job.rv()
+    mapping_files.append(all_to_all_mapping_files)
+
+    if options.remap_stats:
+        # count bases involved in all_to_all mappings
+        map_to_assemblies_file_job.addFollowOnJobFn(online_remap_stats.save_all_to_all_mappings_stats, all_to_all_mapping_files, remap_stats_internal_file, options)
 
     # consolidate all the mapping_files to become a single file.
     consolidate_mapping_files_job = map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files)
@@ -411,21 +406,27 @@ def get_poor_mapping_sequences(job, assembly_file, poor_mapping_coords):
     self.files.loc["fasta_files"], extract the sequence associated with 
     each coordinate in that contig.
     
+    If there are multiple identical copies of the same region, this only includes one of 
+    them.
     """
     
     # make fasta file for later remapping all_to_all.
     poor_mapping_sequence_file = job.fileStore.getLocalTempFile()
 
     contigs = SeqIO.index(job.fileStore.readGlobalFile(assembly_file), "fasta")
+
+    sequences_written = set()
     with open(poor_mapping_sequence_file, "w+") as outf:
         for contig_name, contig_record in contigs.items():
             for coord in poor_mapping_coords[contig_name]:
                 # for each coord in the low_mapq_coords corresponding to a specific contig:
                 # extract the sequence for that contig.
-                low_mapq_sequence = contig_record.seq[coord[0]: coord[1]]
-                outf.write(
-                    ">" + contig_name + "_segment_start_" + str(coord[0]) + "_stop_" + str(coord[1]) + "\n")
-                outf.write(str(low_mapq_sequence) + "\n")
+                sequence_name = ">" + contig_name + "_segment_start_" + str(coord[0]) + "_stop_" + str(coord[1])
+                if sequence_name not in sequences_written:
+                    low_mapq_sequence = contig_record.seq[coord[0]: coord[1]]
+                    outf.write(sequence_name + "\n")
+                    outf.write(str(low_mapq_sequence) + "\n")
+                    sequences_written.add(sequence_name)
             
     return job.fileStore.writeGlobalFile(poor_mapping_sequence_file)
 
@@ -692,6 +693,8 @@ if __name__ == "__main__":
                         help='replace_me', type=int)
     parser.add_argument('--remap_stats', action='store_true', 
                         help='directly counts the total number of bases in the reference and input assemblies; the number of bases mapped in the all-to-ref phase; the bases sent to the all-to-all phase; and the bases mapped in the all-to-all phase.')
+    parser.add_argument('--remap_stats_raw', action='store_true', 
+                        help='requires --remap_stats to be set. Additionally prints the dictionaries of relevant data.')
     parser.add_argument('--remap_stats_output_file', type=str, default='remap_stats_in_pipeline.txt', 
                         help='Defines where to save the remap_stats, if --remap_stats is called.')
 
