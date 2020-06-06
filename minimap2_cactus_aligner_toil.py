@@ -119,40 +119,43 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
     mapping_files.append(map_to_ref_file)
     # map_to_ref_job.addChildJobFn(debug_get_contig_mappings, map_to_ref_file, 20)
 
-    ## re-mapping phase, from regions of the assemblies that map poorly to the reference, 
-    ## to all the assembly sequence.
-    # extract all the start & stop regions of good mapping regions in the assemblies
-    # (this doesn't yet include options.sequence_context, but does include mapq cutoff).
-    mapping_coverage_points_job = map_to_ref_job.addFollowOnJobFn(get_mapping_coverage_points, map_to_ref_file, options)
-    mapping_coverage_points = mapping_coverage_points_job.rv()
+    if not options.all_to_ref_only:
+        ## re-mapping phase, from regions of the assemblies that map poorly to the reference, 
+        ## to all the assembly sequence.
+        # extract all the start & stop regions of good mapping regions in the assemblies
+        # (this doesn't yet include options.sequence_context, but does include mapq cutoff).
+        mapping_coverage_points_job = map_to_ref_job.addFollowOnJobFn(get_mapping_coverage_points, map_to_ref_file, options)
+        mapping_coverage_points = mapping_coverage_points_job.rv()
 
-    # assemble mapping_coverage_points into a list of proper coverage coordinates in 
-    # (start_of_coverage, stop_of_coverage) format.
-    mapping_coverage_coords_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_coordinates, mapping_coverage_points)
-    mapping_coverage_coords = mapping_coverage_coords_job.rv()
+        # assemble mapping_coverage_points into a list of proper coverage coordinates in 
+        # (start_of_coverage, stop_of_coverage) format.
+        mapping_coverage_coords_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_coordinates, mapping_coverage_points)
+        mapping_coverage_coords = mapping_coverage_coords_job.rv()
 
-    # find the coordinates of regions that don't have mapping coverage. These are 
-    # organized in a dictionary with
-    # dict{contig_id: list[tuple(start_of_poor_coverage, stop_of_poor_coverage)]} format.
-    # this includes options.sequence_context, and options.minimum_size_remap.
-    poor_mapping_coverage_coords_job = mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_coverage_coordinates, assembly_to_align_file, mapping_coverage_coords, options)
-    poor_mapping_coverage_coords = poor_mapping_coverage_coords_job.rv()
+        # find the coordinates of regions that don't have mapping coverage. These are 
+        # organized in a dictionary with
+        # dict{contig_id: list[tuple(start_of_poor_coverage, stop_of_poor_coverage)]} format.
+        # this includes options.sequence_context, and options.minimum_size_remap.
+        poor_mapping_coverage_coords_job = mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_coverage_coordinates, assembly_to_align_file, mapping_coverage_coords, options)
+        poor_mapping_coverage_coords = poor_mapping_coverage_coords_job.rv()
 
-    # extract the actual sequence that has poor mapping coverage from the contigs.
-    # saved in a fasta file in the filestore.
-    poor_mapping_sequence_file_job = poor_mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_sequences, assembly_to_align_file, poor_mapping_coverage_coords)
-    poor_mapping_sequence_file = poor_mapping_sequence_file_job.rv()
+        # extract the actual sequence that has poor mapping coverage from the contigs.
+        # saved in a fasta file in the filestore.
+        poor_mapping_sequence_file_job = poor_mapping_coverage_coords_job.addFollowOnJobFn(get_poor_mapping_sequences, assembly_to_align_file, poor_mapping_coverage_coords)
+        poor_mapping_sequence_file = poor_mapping_sequence_file_job.rv()
 
-    # # map the poor mapping sequence to all the other assemblies!
-    map_to_assemblies_file_job = poor_mapping_sequence_file_job.addFollowOnJobFn(remap_poor_mapping_sequences, poor_mapping_sequence_file, assembly_to_align_file, assembly_files)
-    mapping_files.append(map_to_assemblies_file_job.rv())
-    # map_to_assemblies_file_job.addChildJobFn(debug_get_contig_mappings, mapping_files[-1], 20)
+        # # map the poor mapping sequence to all the other assemblies!
+        map_to_assemblies_file_job = poor_mapping_sequence_file_job.addFollowOnJobFn(remap_poor_mapping_sequences, poor_mapping_sequence_file, assembly_to_align_file, assembly_files)
+        mapping_files.append(map_to_assemblies_file_job.rv())
+        # map_to_assemblies_file_job.addChildJobFn(debug_get_contig_mappings, mapping_files[-1], 20)
 
-    # consolidate all the mapping_files to become a single file.
-    consolidate_mapping_files_job = map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files)
-    consolidated_mapping_files = consolidate_mapping_files_job.rv()
+        # consolidate all the mapping_files to become a single file.
+        consolidate_mapping_files_job = map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files)
+        consolidated_mapping_files = consolidate_mapping_files_job.rv()
 
-    return consolidate_mapping_files_job.addFollowOnJobFn(relocate_remapped_fragments_to_source_contigs, consolidated_mapping_files, assembly_to_align_file).rv()
+        return consolidate_mapping_files_job.addFollowOnJobFn(relocate_remapped_fragments_to_source_contigs, consolidated_mapping_files, assembly_to_align_file).rv()
+    else:
+        return map_to_ref_file
 
     # return poor_mapping_sequence_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
     # return map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
@@ -580,7 +583,7 @@ def main(options=None):
                         workflow.exportFile(edited_assembly_files[i], 'file://' + os.path.abspath(options.assemblies_dir) + "/" + assembly_file_names[i])
                 else:
                     # make sure that the folder we want to save the assembly files in exists:
-                    edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "/" + "_edited_for_duplicate_contig_ids/"
+                    edited_assemblies_save_folder = os.path.abspath(options.assemblies_dir) + "_edited_for_duplicate_contig_ids/"
                     if not os.path.isdir(edited_assemblies_save_folder):
                         os.mkdir(edited_assemblies_save_folder)
                     for i in range(len(edited_assembly_files)):
@@ -656,6 +659,7 @@ if __name__ == "__main__":
                         help='replace_me', type=int)
     parser.add_argument('--sequence_context', default=10000,
                         help='replace_me', type=int)
+    parser.add_argument('--all_to_ref_only', help='replace_me', action='store_true')
 
 
     options = parser.parse_args()
