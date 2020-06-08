@@ -35,7 +35,7 @@ def empty(job):
     """
     return
 
-def rename_duplicate_contig_ids(job, assembly_files):
+def rename_duplicate_contig_ids(job, assembly_files, reference_file):
     """
     Sometimes, when combining assemblies from multiple sources, multiple contigs get the 
     same name. This function slightly modifies all but one of the contigs with the same
@@ -53,6 +53,13 @@ def rename_duplicate_contig_ids(job, assembly_files):
     
     contig_ids = set()
     unique_id = int()
+
+    #first, record the sequence ids in reference. (It is assumed that the reference 
+    # doesn't contain duplicate ids internally)
+    reference_file = job.fileStore.readGlobalFile(reference_file)
+    reference_contigs = SeqIO.parse(reference_file, "fasta")
+    for seq in reference_contigs:
+        contig_ids.add(seq.id)
 
     for assembly in assembly_files:
         assembly_file = job.fileStore.readGlobalFile(assembly)
@@ -576,7 +583,12 @@ def main(options=None):
             if options.no_duplicate_contig_ids == False:
                 # if the user hasn't guaranteed that the contig ids are all unique, then rename 
                 # any that are duplicates.
-                edited_assembly_files = workflow.start(Job.wrapJobFn(rename_duplicate_contig_ids, assembly_files))
+                #todo: make sure that the reference genome sequence ids are also included 
+                #todo:      in the renaming. Ideally, make it so that the reference is 
+                #todo:      evaluated first, which should ensure that the reference never
+                #todo:      includes renamed sequence ids (assuming that the reference 
+                #todo:      doesn't contain duplicate sequence ids internally)
+                edited_assembly_files = workflow.start(Job.wrapJobFn(rename_duplicate_contig_ids, assembly_files, ref_id))
                 
                 if options.overwrite_assemblies == True:
                     for i in range(len(edited_assembly_files)):
