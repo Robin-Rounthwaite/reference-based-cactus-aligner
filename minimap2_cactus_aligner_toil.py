@@ -166,12 +166,13 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
 
     # # map the poor mapping sequence to all the other assemblies!
     map_to_assemblies_file_job = poor_mapping_sequence_file_job.addFollowOnJobFn(remap_poor_mapping_sequences, poor_mapping_sequence_file, assembly_to_align_file, assembly_files)
-    all_to_all_mapping_files = map_to_assemblies_file_job.rv()
-    mapping_files.append(all_to_all_mapping_files)
+    all_to_all_mapping_file = map_to_assemblies_file_job.rv()
+    mapping_files.append(all_to_all_mapping_file)
 
     if options.remap_stats:
         # count bases involved in all_to_all mappings
-        map_to_assemblies_file_job.addFollowOnJobFn(online_remap_stats.save_all_to_all_mappings_stats, all_to_all_mapping_files, remap_stats_internal_file, options)
+        map_to_assemblies_file_job.addFollowOnJobFn(debug_print, all_to_all_mapping_file)
+        map_to_assemblies_file_job.addFollowOnJobFn(online_remap_stats.save_all_to_all_mappings_stats, all_to_all_mapping_file, remap_stats_internal_file, options)
 
     # consolidate all the mapping_files to become a single file.
     consolidate_mapping_files_job = map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files)
@@ -181,6 +182,10 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
 
     # return poor_mapping_sequence_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
     # return map_to_assemblies_file_job.addFollowOnJobFn(consolidate_mapping_files, mapping_files).rv()
+
+def debug_print(job, all_to_all_mapping_files):
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ", job.fileStore.readGlobalFile(all_to_all_mapping_files))
+
 
 def map_assembly_to_ref(job, assembly_to_align_file, reference_file):
     map_to_ref_file = job.fileStore.getLocalTempFile()

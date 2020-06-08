@@ -2,10 +2,12 @@
 This provides toil job functions for output from --remap_stats option in the aligner.
 """
 from toil.job import Job
+from toil.common import Toil #todo: necessary? added later
 
-import Cigar
+from cigar import Cigar
 from Bio import SeqIO
 import statistics as stat
+import collections as col
 
 def save_input_assembly_stats(job, all_contig_lengths, remap_stats_internal_file, options):
     with open(job.fileStore.readGlobalFile(remap_stats_internal_file), "a+") as f:
@@ -40,38 +42,44 @@ def save_sequence_remapped_stats(job, assembly_to_align_file, poor_mapping_seque
             job.addFollowOnJobFn(save_raw_data, remap_seq_lengths)
         outf.write("\n")
 
-def save_all_to_all_mappings_stats(job, all_to_all_mapping_files, remap_stats_internal_file, options):
+def save_all_to_all_mappings_stats(job, all_to_all_mapping_file, remap_stats_internal_file, options):
     """
     
     #todo: add options.remap_stats raw output
     #todo: make fxn generalized to any given mapping file? Or make a near-duplicate, with dif annotation.
     """
-    with open(remap_stats_internal_file, "a+") as outf:
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ", all_to_all_mapping_file)
+    
+    with open(job.fileStore.readGlobalFile(remap_stats_internal_file), "a+") as outf:
         outf.write("all_to_all mapping stats:\n")
-        for mapping_file in all_to_all_mapping_files:
+        
+    mapping_coverage_points_job = job.addFollowOnJobFn(get_all_to_all_mapping_coverage_points, all_to_all_mapping_file, options)
+    mapping_coverage_points = mapping_coverage_points_job.rv()
+    
+    mapping_coverage_coords_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_coords, mapping_coverage_points)
+    mapping_coverage_coords = mapping_coverage_coords_job.rv()
 
-            mapping_coverage_points_job = job.addFollowOnJobFn(get_all_to_all_mapping_coverage_points, mapping_file)
-            mapping_coverage_points = mapping_coverage_points_job.rv()
-            
-            mapping_coverage_coords_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_coords, mapping_coverage_points)
-            mapping_coverage_coords = mapping_coverage_coords_job.rv()
+    mapping_coverage_lengths_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_lengths, mapping_coverage_coords)
+    mapping_coverage_lengths = mapping_coverage_lengths_job.rv()
 
-            mapping_coverage_lengths_job = mapping_coverage_points_job.addFollowOnJobFn(get_mapping_coverage_lengths, mapping_coverage_coords)
-            mapping_coverage_lengths = mapping_coverage_lengths_job.rv()
+    get_mapping_coverage_stats_job = mapping_coverage_coords_job.addFollowOnJobFn(get_mapping_coverage_stats, mapping_coverage_coords)
+    mapping_coverage_stats = get_mapping_coverage_stats_job.rv()
 
-            get_mapping_coverage_stats_job = mapping_coverage_coords_job.addFollowOnJobFn(get_mapping_coverage_stats, mapping_coverage_coords)
-            num_mappings, bases_mapped, avg, mode = get_mapping_coverage_stats_job.rv()
+    get_mapping_coverage_stats_job.addFollowOnJobFn(write_mapping_stats_to_file, mapping_coverage_stats, remap_stats_internal_file, options)
 
-            outf.write("stats for mapping file " + mapping_file + ":\n")
-            outf.write("total number of mappings: " + num_mappings + ":\n")
-            outf.write("total bases mapped: " + bases_mapped + ":\n")
-            outf.write("average mapping length: " + avg + ":\n")
-            outf.write("mode mapping length: " + mode + ":\n")
-            
-            if options.remap_stats_raw:
-                outf.write("dict of lengths of sequences sent to remapping:\n")
-                #todo: check to see if opening filestream in two places is valid.
-                get_mapping_coverage_base_count_job.addFollowOnJobFn(save_raw_data, remap_stats_internal_file, mapping_coverage_coords)
+def write_mapping_stats_to_file(job, mapping_coverage_stats, remap_stats_internal_file, options):
+    [num_mappings, bases_mapped, avg, mode] = mapping_coverage_stats
+    with open(job.fileStore.readGlobalFile(remap_stats_internal_file), "a+") as outf:
+        # outf.write("stats for mapping file " + mapping_file + ":\n")
+        outf.write("total number of mappings: " + num_mappings + ":\n")
+        outf.write("total bases mapped: " + bases_mapped + ":\n")
+        outf.write("average mapping length: " + avg + ":\n")
+        outf.write("mode mapping length: " + mode + ":\n")
+        
+        if options.remap_stats_raw:
+            outf.write("dict of lengths of sequences sent to remapping:\n")
+            #todo: check to see if opening filestream in two places is valid.
+            job.addFollowOnJobFn(save_raw_data, remap_stats_internal_file, mapping_coverage_coords)
 
         outf.write("\n")
 
@@ -218,6 +226,6 @@ def get_mapping_coverage_stats(job, mapping_coverage_lengths):
     return num_mappings, total, avg, mode
 
 def save_raw_data(job, remap_stats_internal_file, raw_data):
-    with open(remap_stats_internal_file, "a+") as outf:
+    with open(job.fileStore.readGlobalFile(remap_stats_internal_file), "a+") as outf:
         outf.write(raw_data)
         outf.write("\n")
