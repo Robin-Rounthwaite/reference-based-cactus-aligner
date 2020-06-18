@@ -88,6 +88,7 @@ def get_lastz_cig_str(cigar_string):
 def make_lastz_output(job, sam_file):
     output_lines = list()
     secondary_output_lines = list()
+    debug_deleted_lines = int()
     with open(job.fileStore.readGlobalFile(sam_file)) as sam:
         for line in sam:
             parsed = line.split()
@@ -95,6 +96,7 @@ def make_lastz_output(job, sam_file):
             #check to make sure line is mapped: is there the 4 flag? If so, it's unmapped.
             if (flag%8)//4 == 1:
                 # then this line is marked as unmapped. Skip it.
+                debug_deleted_lines += 1
                 continue
             cig_str = parsed[5]
             query_id = parsed[0]
@@ -142,6 +144,9 @@ def make_lastz_output(job, sam_file):
                 secondary_output_lines.append(full_lastz_cigar)
             else:
                 output_lines.append(full_lastz_cigar)
+        # #todo: !!!remove!!!
+        # output_lines.append("lines deleted: " + str(debug_deleted_lines))
+
 
     output_file = job.fileStore.getLocalTempFile()
     secondary_output_file = job.fileStore.getLocalTempFile()
