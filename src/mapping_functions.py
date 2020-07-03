@@ -10,108 +10,38 @@ import collections as col
 
 def map_assembly_to_ref(job, assembly_to_align_file, reference_file):
     map_to_ref_file = job.fileStore.getLocalTempFile()
-    print("*************************************about to call minimap to ref")
-    subprocess.call(["minimap2", "-ax", "asm5", "-o",
-                    map_to_ref_file, job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
-    print("*************************************about to call minimap to ref")
+    subprocess.call(["minimap2", "-cx", "asm5", "-o", map_to_ref_file,
+                    job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
+    # subprocess.call(["minimap2", "-ax", "asm5", "-o",
+    #                 map_to_ref_file, job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
     return job.fileStore.writeGlobalFile(map_to_ref_file)
 
 def get_mapping_coverage_points(job, map_to_ref_file, options):
     """
     Returns:
     all start and stop points of mappings, sorted by contigs.
-        key: tuple(fasta_file, contig_id), value: list[regions in tuple(point_value, start_bool) format].
+        key: contig_id, value: list[regions in tuple(point_value, start_bool) format].
         where start_bool is true if the point is a start of a region, and false if the point is a stop of the region.
     """
     # record all regions of each contig that map well, broken down into the 
     # start-points and stop-points of that region. 
-    # key: tuple(fasta_file, contig_id), value: list[regions in tuple(point_value, start_bool) format].
+    # key: contig_id, value: list[regions in tuple(point_value, start_bool) format].
     mapping_coverage_points = col.defaultdict(list)
 
     # add all start and end points for regions that map well 
     with open(job.fileStore.readGlobalFile(map_to_ref_file)) as f:
         for mapping in f:
-            # skip the header files:
-            if mapping[0] == "@":
-                continue
-
             # parse line in map_file:
             mapping = mapping.split("\t")
             
-            # note: to keep contig_ids unique between fasta files, pair with the
-            # original fasta filename of the assembly to the contig name.
-            # contig_id = (fasta_file_name, mapping[0])
             contig_id = mapping[0]
-            cig_str = mapping[5]
-            if int(mapping[4]) >= options.mapq_cutoff:
-                # then we have an mapping that counts as a high mapq.
-
-                # find out start coord for high mapq coverage:
-                start = get_start_of_cigar(cig_str)
-                # find out stop coord for high mapq coverage:
-                stop = get_stop_of_cigar(cig_str)
-
-                # add these coordinates to mapping_coverage_points
-                mapping_coverage_points[contig_id].append((start, True))
-                mapping_coverage_points[contig_id].append((stop, False))
-    # job.log("------------------------------------------------------len(mapping_coverage_points): " + str(len(mapping_coverage_points["624"])))
+            
+            if int(mapping[11]) >= options.mapq_cutoff:
+                # add high mapq coordinates to mapping_coverage_points
+                mapping_coverage_points[contig_id].append((int(mapping[2]), True))
+                mapping_coverage_points[contig_id].append((int(mapping[3]), False))
 
     return mapping_coverage_points
-
-def get_start_of_cigar(cigar_string):
-    """
-    Reads the cigar string, returns how many bases from index 0 the alignment begins.
-    """
-    cig = cigar.Cigar(cigar_string)
-
-    #todo: make it so that we can check for bad cigs:
-    # if cig == ["not a real cig"]:
-    #     #then we've been given an empty cigar string, which shouldn't ever happen.
-    #     print("WARNING: get_start_of_cigar has been requested of an empty cigar string. "
-    #             + "This shouldn't happen.")
-    #     return
-    # print("cigar_string", cigar_string)
-    cig_list = list(cig.items())
-
-    if cig_list[0][1] in ["H", "S"]:
-        # then the mapping has a clipping. Return clipping length
-        # print("start", cig_list[0][0])
-        return cig_list[0][0]
-    else:
-        # print("start", 0)
-        return 0
-    
-
-def get_stop_of_cigar(cigar_string):
-    """
-    Reads the cigar string, returns how many bases from index 0 of the original read
-        the alignment's stop is.
-    """
-    # print("cigar_string", cigar_string)
-
-    cig = cigar.Cigar(cigar_string)
-    
-    #todo: make it so that we can check for bad cigs:
-    # if cig == ["not a real cig"]:
-        # #then we've been given an empty cigar string, which shouldn't ever happen.
-        # print("WARNING: get_start_of_cigar has been requested of an empty cigar string. "
-        #         + "This shouldn't happen.")
-        # return
-    
-    cig_list = list(cig.items())
-
-    # modify len(cig) to get the length of the contig up to the point of the stop:
-    stop_position = len(cig)
-    if cig_list[0][1] == "H":
-        # then the length of the hard clipping at the beginning won't be included in the
-        # contig. Manually include it:
-        stop_position += cig_list[0][0]
-    if cig_list[-1][1] == "S":
-        # then the length of the soft clipping after the mapping will be included in the
-        # contig. Manually remove it:
-        stop_position -= cig_list[-1][0]
-    # print("stop", stop_position)
-    return stop_position
 
 def get_mapping_coverage_coordinates(job, mapping_coverage_points):
     """
@@ -256,7 +186,6 @@ def remap_poor_mapping_sequences(job, poor_mapping_sequence_file, assembly_to_al
     output: minimap2 all-to-all alignments of all low_mapq segments 
         to all the fasta_files.
     """
-    minimap_calls = int()
     all_assemblies_but_to_align = assembly_files.copy()
     #todo: remove below line!! We want mappings between contigs in the same file.
     # all_assemblies_but_to_align.remove(assembly_to_align_file)
@@ -269,14 +198,11 @@ def remap_poor_mapping_sequences(job, poor_mapping_sequence_file, assembly_to_al
         # the same original fasta as the poor_mapping_sequence_file),
         
         # map low_mapq_file to target_fasta_file.
-        subprocess.call(["minimap2", "-ax", "asm5", "-o",
-                            job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
-        minimap_calls += 1
+        subprocess.call(["minimap2", "-cx", "asm5", "-o",
+                    job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
+        # subprocess.call(["minimap2", "-ax", "asm5", "-o",
+        #                     job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
         remapping_files.append(output_file_global)
-
-    # if options.export_all_to_all_files:
-    #     for remap_file in remapping_files:
-    #         options.all_to_all_mapping_files.append(remap_file)
 
     return job.addChildJobFn(consolidate_mapping_files, remapping_files).rv()
 
@@ -308,88 +234,27 @@ def relocate_remapped_fragments_to_source_contigs(job, contig_lengths, mapping_f
     
     modified_mapping_file = job.fileStore.getLocalTempFile()
 
-    debug_line_count = int()
-    debug_first_if = int()
-    debug_second_if = int()
-    debug_third_if = int()
 
     with open(job.fileStore.readGlobalFile(mapping_file)) as inf:
         with open(modified_mapping_file, "w") as outf:
             for line in inf:
-                debug_line_count += 1
                 parsed = line.split()
-                if (int(parsed[1])%8)//4==1:
-                    # if the line is flagged as unmapped, just write it to the outfile.
-                    outf.write(line)
-                    debug_first_if += 1
-                elif "segment" in parsed[0]:
-                    debug_second_if += 1
+                if "segment" in parsed[0]:
                     # construct the new name by dropping all the parts of the old name from "_segment_" onwards.
                     name_parsed = parsed[0].split("_segment_")
                     new_name = name_parsed[0]
 
-                    # extract the start and stop of the 
-                    seg_start = name_parsed[1].split("_")[-3]
-                    seg_stop = name_parsed[1].split("_")[-1]
-                    cig_str = parsed[5]
-                    cig = cigar.Cigar(cig_str)
-                    cig_list = list(cig.items())
-                    #cig_temp_start is used to determine where the alignment starts *with relation
-                    # to the start of the contig fragment*. This is useful for calculating
-                    # cig_stop, below.
-
-                    alignment_start_pos_in_seg = int()
-                    if cig_list[0][1] in ["H", "S"]:
-                        alignment_start_pos_in_seg = int(cig_list[0][0])
-                    else:
-                        alignment_start_pos_in_seg = 0
-
-                    alignment_length = len(cig)
-                    if cig_list[0][1] == "S":
-                        alignment_length = alignment_length - cig_list[0][0]
-                    if cig_list[-1][1] == "S":
-                        alignment_length = alignment_length - cig_list[-1][0]
-
-                    alignment_end_pos_in_seg = alignment_start_pos_in_seg + alignment_length
-
-                    ## modify cig_start (the clipping at the beginning of the cigar)
-                    if cig_list[0][1] in ["H", "S"]:
-                        # then the mapping has a clipping at start. Modify cig_str clipping.
-                        cig_list[0] = (int(cig_list[0][0]) + int(seg_start), cig_list[0][1])
-                    elif seg_start:
-                        # then there is a nonzero seg_start, but there isn't a clipping for cig_str. Add clipping.
-                        cig_list.insert(0, (seg_start, "H"))
-
-                    ## modify clipping at the end of cig
-                    # print("alignment_end_pos_in_seg", alignment_end_pos_in_seg, "seg_start", seg_start, "contig_lengths[new_name]", contig_lengths[new_name])
-                    if alignment_end_pos_in_seg + int(seg_start) < contig_lengths[new_name]:
-                        # then there is additional clipping that needs to be added to the end of the cig.
-                        end_clipping_len = contig_lengths[new_name] - (alignment_end_pos_in_seg + int(seg_start))
-                        if cig_list[-1][1] in ["H", "S"]:
-                            # then the mapping has a clipping at the end. Modify the clipping.
-                            #TODO: make it so you properly remove end clipping, not first two chars!
-                            cig_list[-1] = (end_clipping_len, cig_list[-1][1])
-                        else:
-                            #the mapping doesn't have a clipping. Add one.
-                            cig_list.append((end_clipping_len, "H"))
-                    
-                    # compose the new cig
-                    new_cig = ""
-                    for tup in cig_list:
-                        new_cig += str(tup[0]) + tup[1]
+                    # extract the start and stop of the mapping
+                    segment_start = int(name_parsed[1].split("_")[-3])
+                    mapping_start = segment_start + int(parsed[2])
+                    mapping_stop = segment_start + int(parsed[3])
 
                     #now, alter the line
-                    new_line = new_name + "\t" + "\t".join(parsed[1:5]) + "\t" + new_cig + "\t" + "\t".join(parsed[6:]) + "\n"
-                    # print("line after modification: ", new_line)
-
+                    new_line = new_name + "\t" + parsed[1] + "\t" + str(mapping_start) + "\t" + str(mapping_stop) + "\t" + "\t".join(parsed[4:]) + "\n"
+                    
                     #add it to the outfile
                     outf.write(new_line)
                 else:
-                    debug_third_if += 1
                     outf.write(line)
-            # outf.write("debug_line_count:" + str(debug_line_count) + " 0 0 0 0 10M 0 0\n")
-            # outf.write("debug_first_if:" + str(debug_first_if) + " 0 0 0 0 10M 0 0\n")
-            # outf.write("debug_second_if:" + str(debug_second_if) + " 0 0 0 0 10M 0 0\n")
-            # outf.write("debug_third_if:" + str(debug_third_if) + " 0 0 0 0 10M 0 0\n")
 
     return job.fileStore.writeGlobalFile(modified_mapping_file)

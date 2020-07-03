@@ -18,7 +18,7 @@ from argparse import ArgumentParser
 import os
 from Bio import SeqIO
 
-from sam_to_lastz_cigar import make_lastz_output
+from src.sam_to_lastz_cigar import make_lastz_output
 from remap_stats.online_remap_stats import online_remap_stats
 from src import mapping_functions
 from src import fasta_preprocessing
@@ -47,16 +47,19 @@ def align_all_assemblies(job, reference_file, assembly_files, remap_stats_intern
     for assembly_to_align_file in assembly_files:
         assembly_mapping_file_job = all_contig_lengths_job.addFollowOnJobFn(align_assembly, reference_file, assembly_files, assembly_to_align_file, all_contig_lengths, remap_stats_internal_file, options)
         assembly_mapping_file = assembly_mapping_file_job.rv()
-        mapping_files.append(assembly_mapping_file)
         
         if options.export_all_to_all_files:
             # Then assembly_mapping_file is actually a triplet, including useful data on all_to_all.
-            assembly_mapping_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, triplet, 0).rv()
-            poor_mapping_sequence_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, triplet, 1).rv()
-            all_to_all_mapping_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, triplet, 2).rv()
+            
+            unpacked_assembly_mapping_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, assembly_mapping_file, 0).rv()
+            poor_mapping_sequence_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, assembly_mapping_file, 1).rv()
+            all_to_all_mapping_file = assembly_mapping_file_job.addFollowOnJobFn(unpack_promise, assembly_mapping_file, 2).rv()
             
             all_to_all_fastas.append(poor_mapping_sequence_file)
             all_to_all_sams.append(all_to_all_mapping_file)
+            mapping_files.append(unpacked_assembly_mapping_file)
+        else:
+            mapping_files.append(assembly_mapping_file)
 
     if options.export_all_to_all_files:
         return job.addFollowOnJobFn(mapping_functions.consolidate_mapping_files, mapping_files).rv(), all_to_all_fastas, all_to_all_sams
@@ -123,7 +126,8 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
 
 
         if options.export_all_to_all_files:
-            # return (consolidate_mapping_files_job.addFollowOnJobFn(relocate_remapped_fragments_to_source_contigs, contig_lengths, consolidated_mapping_files, assembly_to_align_file).rv(), poor_mapping_sequence_file, all_to_all_mapping_file)
+            # return (consolidated_mapping_files, poor_mapping_sequence_file, all_to_all_mapping_file)
+            # return (consolidate_mapping_files_job.addFollowOnJobFn(mapping_functions.relocate_remapped_fragments_to_source_contigs, contig_lengths, consolidated_mapping_files, assembly_to_align_file).rv(), poor_mapping_sequence_file, all_to_all_mapping_file)
             return (consolidate_mapping_files_job.addFollowOnJobFn(mapping_functions.relocate_remapped_fragments_to_source_contigs, contig_lengths, consolidated_mapping_files, assembly_to_align_file).rv(), poor_mapping_sequence_file, consolidate_mapping_files_job.addFollowOnJobFn(mapping_functions.relocate_remapped_fragments_to_source_contigs, contig_lengths, all_to_all_mapping_file, assembly_to_align_file).rv())
         else:
             return consolidate_mapping_files_job.addFollowOnJobFn(mapping_functions.relocate_remapped_fragments_to_source_contigs, contig_lengths, consolidated_mapping_files, assembly_to_align_file).rv()
@@ -266,8 +270,9 @@ def main(options=None):
 
 
             # reformat the alignments as lastz cigars:
-            (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+            [lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments] = workflow.start(Job.wrapJobFn(
                 make_lastz_output, alignments))
+
                 
             workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(options.primary_output_file))
             workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(options.secondary_output_file))
@@ -284,7 +289,8 @@ def main(options=None):
                 file_count = 0
                 for mapping_file in all_to_all_sams:
                     file_count += 1
-                    (lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments) = workflow.start(Job.wrapJobFn(
+                    workflow.exportFile(mapping_file, 'file://' + os.path.abspath(".") + "/all_to_all_mapping_file_" + str(file_count) + ".sam")
+                    [lastz_cigar_primary_alignments, lastz_cigar_secondary_alignments] = workflow.start(Job.wrapJobFn(
                 make_lastz_output, mapping_file))
                     workflow.exportFile(lastz_cigar_primary_alignments, 'file://' + os.path.abspath(".") + "/all_to_all_mapping_file_primary" + str(file_count) + ".cigar")
                     workflow.exportFile(lastz_cigar_secondary_alignments, 'file://' + os.path.abspath(".") + "/all_to_all_mapping_file_secondary" + str(file_count) + ".cigar")
