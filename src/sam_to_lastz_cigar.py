@@ -32,17 +32,40 @@ def make_lastz_output(job, paf_file):
     # write output to files; convert to lastz:
     lines = [primary, secondary]
     sort_files = [job.fileStore.getLocalTempFile() for i in range(len(lines))]
+    paftool_files = [job.fileStore.getLocalTempFile() for i in range(len(lines))]
     out_files = [job.fileStore.writeGlobalFile(job.fileStore.getLocalTempFile()) for i in range(len(lines))]
     for i in range(len(lines)):
         with open(sort_files[i], "w") as sortf:
             sortf.writelines(lines[i])
-        with open(job.fileStore.readGlobalFile(out_files[i]), "w") as outf:
+        with open(paftool_files[i], "w") as outf:
             subprocess.run(["paftools.js", "view", "-f", "lastz-cigar", sort_files[i]], stdout=outf)
-        
+        fix_negative_strand_mappings(paftool_files[i], job.fileStore.readGlobalFile(out_files[i]))
     return out_files
 
-
-
+def fix_negative_strand_mappings(infile, outfile):
+    """
+    paftools.js outputs lastz files with a problem. On "-" strand mappings, the start, stop
+    coordinates of the mapping are shown with [smaller coord], [larger coord], when in fact
+    the larger coord should be first. This fixes that.
+    Note: requires that outfile != infile.
+    """
+    with open(infile) as inf:
+        with open(outfile, "w") as outf:
+            for line in inf:
+                parsed = line.split()
+                if parsed[4] == "-" or parsed[8] == "-":
+                    if parsed[4] == "-":
+                        first = parsed[3]
+                        parsed[3] = parsed[2]
+                        parsed[2] = first
+                    if parsed[8] == "-":
+                        first = parsed[6]
+                        parsed[6] = parsed[5]
+                        parsed[5] = first
+                    outf.write(" ".join(parsed) + "\n")
+                else:
+                    outf.write(line)
+            
 
 # def get_query_start(cigar_string):
 #     """
