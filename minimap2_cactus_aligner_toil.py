@@ -78,7 +78,7 @@ def align_assembly(job, reference_file, assembly_files, assembly_to_align_file, 
 
     ## map to reference phase:
     # map assembly to reference. Get the id of the map-to-ref file.
-    map_to_ref_job = job.addChildJobFn(mapping_functions.map_assembly_to_ref, assembly_to_align_file, reference_file)
+    map_to_ref_job = job.addChildJobFn(mapping_functions.map_assembly_to_ref, assembly_to_align_file, reference_file, options)
     map_to_ref_file = map_to_ref_job.rv()
     mapping_files.append(map_to_ref_file)
 
@@ -202,6 +202,8 @@ def get_options():
                         help='Defines where to save the remap_stats, if --remap_stats is called.')
     parser.add_argument('--export_all_to_all_files', action='store_true', 
                         help='Exports both input fasta and output sam files for all-to-all.')
+    parser.add_argument('--no_sup_or_sec', action='store_true', 
+                        help='Will exclude all secondary or supplementary mappings from the output.')
     options = parser.parse_args()
     return options
 

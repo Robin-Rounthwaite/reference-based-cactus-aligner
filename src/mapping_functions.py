@@ -8,13 +8,54 @@ import collections as col
 
 
 
-def map_assembly_to_ref(job, assembly_to_align_file, reference_file):
-    map_to_ref_file = job.fileStore.getLocalTempFile()
-    subprocess.call(["minimap2", "-cx", "asm5", "-o", map_to_ref_file,
-                    job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
-    # subprocess.call(["minimap2", "-ax", "asm5", "-o",
-    #                 map_to_ref_file, job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
-    return job.fileStore.writeGlobalFile(map_to_ref_file)
+def map_assembly_to_ref(job, assembly_to_align_file, reference_file, options):
+    paf_tmp = job.fileStore.getLocalTempFile()
+    map_to_ref_paf = job.fileStore.writeGlobalFile(paf_tmp)
+    if not options.no_sup_or_sec:
+        subprocess.call(["minimap2", "-cx", "asm5", "-o", job.fileStore.readGlobalFile(map_to_ref_paf),
+                        job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(assembly_to_align_file)])
+    else:
+        # exclude all supplementary or secondary mappings. Requires initially using .sam output, because that records supplementary mappings.
+        map_to_ref_paf = job.addChildJobFn(map_without_sup_or_sec, reference_file, assembly_to_align_file).rv()
+    return map_to_ref_paf
+
+def map_without_sup_or_sec(job, reference_file, to_map_file):
+    """
+    Run minimap2, make output so that there is no supplementary or secondary mappings.
+    """
+    sam_tmp = job.fileStore.getLocalTempFile()
+    map_to_ref_sam = job.fileStore.writeGlobalFile(sam_tmp)
+    subprocess.call(["minimap2", "-ax", "asm5", "--secondary=no", "-o", job.fileStore.readGlobalFile(map_to_ref_sam),
+                    job.fileStore.readGlobalFile(reference_file), job.fileStore.readGlobalFile(to_map_file)])
+                    
+    sup_free_sam_job = job.addChildJobFn(exclude_supplementary_mappings, map_to_ref_sam)
+    sup_free_sam = sup_free_sam_job.rv()
+
+    return sup_free_sam_job.addChildJobFn(sam_to_paf, sup_free_sam).rv()
+
+
+def exclude_supplementary_mappings(job, sam_file):
+    sup_free = job.fileStore.getLocalTempFile()
+    with open(job.fileStore.readGlobalFile(sam_file)) as inf:
+        with open(sup_free, "w") as outf:
+            for line in inf:
+                # print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ line", line)
+
+                if line[0] == "@":
+                    outf.write(line)
+                else:
+                    parsed = line.split()
+                    # print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ parsed", parsed)
+                    if int(parsed[1])//2048 != 1:
+                        # if no 2048 FLAG, no supplimentary mappings.
+                        outf.write(line)
+
+    return job.fileStore.writeGlobalFile(sup_free)
+
+def sam_to_paf(job, sam_file):
+    paf_file = job.fileStore.getLocalTempFile()
+    subprocess.call(["bioconvert", "sam2paf", job.fileStore.readGlobalFile(sam_file), paf_file, "--force"])
+    return job.fileStore.writeGlobalFile(paf_file)
 
 def get_mapping_coverage_points(job, map_to_ref_file, options):
     """
@@ -189,22 +230,24 @@ def remap_poor_mapping_sequences(job, poor_mapping_sequence_file, assembly_to_al
     all_assemblies_but_to_align = assembly_files.copy()
     #todo: remove below line!! We want mappings between contigs in the same file.
     # all_assemblies_but_to_align.remove(assembly_to_align_file)
+    leader = job.addChildJobFn(empty)
 
     remapping_files = list()
     for target_mapping_file in all_assemblies_but_to_align:
         output_file = job.fileStore.getLocalTempFile()
         output_file_global = job.fileStore.writeGlobalFile(output_file)
-        # for every target mapping file (but check to make sure the target isn't 
-        # the same original fasta as the poor_mapping_sequence_file),
         
         # map low_mapq_file to target_fasta_file.
-        subprocess.call(["minimap2", "-cx", "asm5", "-o",
-                    job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
-        # subprocess.call(["minimap2", "-ax", "asm5", "-o",
-        #                     job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
+        if not options.no_sup_or_sec:
+            subprocess.call(["minimap2", "-cx", "asm5", "-o",
+                        job.fileStore.readGlobalFile(output_file_global), job.fileStore.readGlobalFile(target_mapping_file), job.fileStore.readGlobalFile(poor_mapping_sequence_file)])
+        else:
+            output_file_global = leader.addChildJobFn(map_without_sup_or_sec, target_mapping_file, poor_mapping_sequence_file).rv()
         remapping_files.append(output_file_global)
+    
+    mapping_jobs = leader.encapsulate()
 
-    return job.addChildJobFn(consolidate_mapping_files, remapping_files).rv()
+    return mapping_jobs.addChildJobFn(consolidate_mapping_files, remapping_files).rv()
 
 def consolidate_mapping_files(job, mapping_files):
     """
@@ -258,3 +301,10 @@ def relocate_remapped_fragments_to_source_contigs(job, contig_lengths, mapping_f
                     outf.write(line)
 
     return job.fileStore.writeGlobalFile(modified_mapping_file)
+
+
+def empty(job):
+    """
+    An empty job, for easier toil job organization.
+    """
+    return
