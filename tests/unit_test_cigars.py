@@ -103,7 +103,9 @@ def test_mapping_coords_within_contig_lengths(mapping_files, contig_lengths):
                 # See if the query mapping coords match total query length
                 if int(parsed[2]) < 0:
                     print("WARNING: query mapping start<0.")
-                if int(parsed[3]) > contig_lengths[parsed[1]]:
+                if int(parsed[2]) >= contig_lengths[parsed[1]]:
+                    print("WARNING: query mapping start extends past length of contig.")
+                if int(parsed[3]) >= contig_lengths[parsed[1]]:
                     print("WARNING: query mapping end extends past length of contig.")
                 if int(parsed[3]) < 0:
                     print("WARNING: query mapping end<0.")
@@ -111,7 +113,9 @@ def test_mapping_coords_within_contig_lengths(mapping_files, contig_lengths):
                 # See if the target mapping coords match total target length
                 if int(parsed[6]) < 0:
                     print("WARNING: target mapping start<0.")
-                if int(parsed[7]) > contig_lengths[parsed[5]]:
+                if int(parsed[6]) >= contig_lengths[parsed[5]]:
+                    print("WARNING: target mapping start extends past length of contig.")
+                if int(parsed[7]) >= contig_lengths[parsed[5]]:
                     print("WARNING: target mapping end extends past length of contig.")
                 if int(parsed[7]) < 0:
                     print("WARNING: target mapping end<0.")
