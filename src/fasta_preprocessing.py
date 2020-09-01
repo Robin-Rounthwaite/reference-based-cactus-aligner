@@ -1,6 +1,6 @@
 from Bio import SeqIO
 
-def rename_duplicate_contig_ids(job, assembly_files, reference_file):
+def rename_duplicate_contig_ids(job, assembly_files, reference_file, new_assembly_files, workflow):
     """
     Sometimes, when combining assemblies from multiple sources, multiple contigs get the 
     same name. This function slightly modifies all but one of the contigs with the same
@@ -21,17 +21,15 @@ def rename_duplicate_contig_ids(job, assembly_files, reference_file):
 
     #first, record the sequence ids in reference. (It is assumed that the reference 
     # doesn't contain duplicate ids internally)
-    reference_file = job.fileStore.readGlobalFile(reference_file)
     reference_contigs = SeqIO.parse(reference_file, "fasta")
     for seq in reference_contigs:
         contig_ids.add(seq.id)
 
-    for assembly in assembly_files:
-        assembly_file = job.fileStore.readGlobalFile(assembly)
-        assembly_contigs = SeqIO.parse(assembly_file, "fasta")
+    for asm in assembly_files:
+        asm_contigs = SeqIO.parse(assembly_files[asm], "fasta")
         output_contigs = list()
         
-        for contig in assembly_contigs:
+        for contig in asm_contigs:
             
             if contig.id in contig_ids:
                 old_id = contig.id
@@ -52,8 +50,7 @@ def rename_duplicate_contig_ids(job, assembly_files, reference_file):
 
             output_contigs.append(contig)
 
-        # write the altered assembly to original file.    
-        SeqIO.write(output_contigs, assembly_file, "fasta")
+        # write the altered asm.    
+        SeqIO.write(output_contigs, new_assembly_files[asm], "fasta")
 
-    # return the file ids of the original, overwritten assembly files.
-    return assembly_files
+    return new_assembly_files
