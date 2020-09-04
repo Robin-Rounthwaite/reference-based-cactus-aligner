@@ -1,6 +1,6 @@
 from Bio import SeqIO
 
-def rename_duplicate_contig_ids(job, assembly_files, reference_file, new_assembly_files, workflow):
+def rename_duplicate_contig_ids(assembly_files, reference, new_assembly_files):
     """
     Sometimes, when combining assemblies from multiple sources, multiple contigs get the 
     same name. This function slightly modifies all but one of the contigs with the same
@@ -21,11 +21,15 @@ def rename_duplicate_contig_ids(job, assembly_files, reference_file, new_assembl
 
     #first, record the sequence ids in reference. (It is assumed that the reference 
     # doesn't contain duplicate ids internally)
-    reference_contigs = SeqIO.parse(reference_file, "fasta")
+    reference_contigs = SeqIO.parse(assembly_files[reference], "fasta")
     for seq in reference_contigs:
         contig_ids.add(seq.id)
 
     for asm in assembly_files:
+        if asm == reference:
+            # we've already preprocessed the reference. Skip it.
+            continue
+        
         asm_contigs = SeqIO.parse(assembly_files[asm], "fasta")
         output_contigs = list()
         
